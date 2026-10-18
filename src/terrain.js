@@ -76,8 +76,16 @@ export async function loadTerrain(url, balance) {
   canvas.width = width;
   canvas.height = height;
   canvasCtx = canvas.getContext('2d');
+  // render() only re-uploads the dirty rect, so if the browser drops this canvas's
+  // backing store (seen once as a blank first frame in headless Chromium), redraw
+  // all of it once the context comes back.
+  canvas.addEventListener('contextrestored', markAllDirty);
   image = canvasCtx.createImageData(width, height);
   for (let i = 0; i < types.length; i++) writePixel(i);
+  markAllDirty();
+}
+
+function markAllDirty() {
   markDirty(0, 0, width - 1, height - 1);
 }
 
@@ -193,7 +201,7 @@ function clearAndRedraw(cx, cy, radius, options) {
 
 /**
  * Blast at (cx, cy): clears dirt within radius * resistance (see clearCircle).
- * Used by the debug click harness now and by shots in slice 4.
+ * Used by shots (slice 4) and the debug click harness.
  * Returns the number of pixels cleared.
  */
 export function explode(cx, cy, radius) {
@@ -217,6 +225,12 @@ export function resistanceAt(x, y) {
 }
 
 export function render(ctx) {
+  if (canvasCtx.isContextLost && canvasCtx.isContextLost()) {
+    // Offscreen copy is gone: draw straight from the image, and redo it all on restore.
+    ctx.putImageData(image, 0, 0);
+    markAllDirty();
+    return;
+  }
   if (dirtyMinX <= dirtyMaxX) {
     const dw = dirtyMaxX - dirtyMinX + 1;
     const dh = dirtyMaxY - dirtyMinY + 1;

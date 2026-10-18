@@ -1,5 +1,6 @@
 // Units (soldiers, queens, drones). Slice 3: one soldier that falls, walks and
-// climbs, plus the walk budget. Queens and drones come in slices 6 and 7.
+// climbs, plus the walk budget. Slice 4: hit points and a placeholder death.
+// Queens and drones come in slices 6 and 7.
 //
 // Movement is pure grid math against a `world` ({ width, height, isSolid(x, y) })
 // with no DOM, so it can be tested in node against a synthetic grid. Positions are
@@ -67,6 +68,8 @@ export function createSoldier(team, x, y, cfg, facing = 1) {
     walkAccum: 0, // fractional walk distance not yet applied
     clingDir: 0, // side of the wall being climbed (1, -1), 0 when not climbing
     canStartWalk: true, // false after a walk spent AP, until the walk key is released
+    hp: cfg.hitsToKill, // hits left; blasts take 1 (shots.js damageUnitsInRadius)
+    dead: false,
   };
 }
 
@@ -220,4 +223,22 @@ export function drawSoldier(ctx, s, color, eyeColor) {
   ctx.fillRect(s.facing > 0 ? front : front - 4, s.y + 10, 4, 2);
   ctx.fillStyle = eyeColor;
   ctx.fillRect(s.facing > 0 ? front - 4 : front + 2, s.y + 3, 2, 2);
+}
+
+/**
+ * Placeholder death (the real skull is slice 8): a dimmed team-colored X over
+ * where the soldier stood.
+ */
+export function drawDeadSoldier(ctx, s, color) {
+  ctx.save();
+  ctx.globalAlpha = 0.6;
+  ctx.fillStyle = color;
+  const size = s.w;
+  const x0 = s.x;
+  const y0 = s.y + s.h - size;
+  for (let i = 0; i < size; i++) {
+    ctx.fillRect(x0 + i, y0 + i, 2, 2);
+    ctx.fillRect(x0 + size - 1 - i, y0 + i, 2, 2);
+  }
+  ctx.restore();
 }

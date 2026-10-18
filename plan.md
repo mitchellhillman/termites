@@ -160,7 +160,7 @@ When any unit dies, a tiny pixel skull appears over it for ~1s (set in balance.j
 ## Tech
 
 - Plain JavaScript and HTML canvas, with no build step and no frameworks
-- Code is split into a few ES modules: `main.js`, `terrain.js`, `units.js`, `input.js`, `hud.js`
+- Code is split into a few ES modules: `main.js`, `terrain.js`, `units.js`, `shots.js`, `input.js`, `hud.js`
 - All tunable values (sizes, speeds, radii, counts, timings, colors, the terrain color key) live in a hand-editable `balance.json`, loaded with `fetch()`
 - At runtime, `map.png` is loaded into an offscreen canvas or typed array, and dirt is cleared in place
 - Run locally with a static server (e.g. `python3 -m http.server`)
@@ -173,7 +173,7 @@ Each slice ends with something you can run and see in the browser.
 - [x] **1. Skeleton and terrain:** `index.html`, the module layout, `balance.json` loading, and generating the first `map.png`. Draw the map with its color key and the grid overlay.
 - [x] **2. Destructible terrain:** clicking the map makes a test explosion that clears dirt, with smaller craters in harder dirt and none in bedrock.
 - [x] **3. One soldier walking:** soldier sprite, gravity and falling, walking on surfaces and climbing walls, and the 40px walk budget. P1 keys only.
-- [ ] **4. Shooting:** aim cursor, facing flip, PWR bar, shot arc, explosion on contact, blast radius from impact angle, and the pixel-ring effect.
+- [x] **4. Shooting:** aim cursor, facing flip, PWR bar, shot arc, explosion on contact, blast radius from impact angle, and the pixel-ring effect.
 - [ ] **5. Two players and turns:** second soldier, P2 keys, mode toggle, AP spending, End Turn, coin flip, and turn indicator. Uses a fixed AP number until drones exist.
 - [ ] **6. Queens and win rules:** queens in their chambers, 3 health and health dots, blast damage to all units, friendly fire, and win, draw, and restart.
 - [ ] **7. Drones:** spawning, the drone cap, wandering, tunneling with resistance, wall-clinging, and real-time movement. AP comes from drone count; soldier death skips a spawn and respawns the soldier.

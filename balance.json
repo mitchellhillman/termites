@@ -31,7 +31,33 @@
     "snapDownPx": 4,
     "gravity": 600,
     "maxFallSpeed": 400,
+    "hitsToKill": 1,
     "eyeColor": "#1a0f08"
+  },
+
+  "shot": {
+    "apCost": 1,
+    "startAngle": 45,
+    "aimSpeed": 60,
+    "aimArcRadius": 22,
+    "powerSweepSpeed": 1.25,
+    "minSpeed": 80,
+    "maxSpeed": 460,
+    "gravity": 300,
+    "subStepPx": 0.5,
+    "maxFlightTime": 15,
+    "size": 3,
+    "powerBar": {
+      "width": 4,
+      "height": 32,
+      "gap": 4,
+      "markerColor": "#ffffff",
+      "bottomColor": "#3fbf3f",
+      "middleColor": "#f2d22e",
+      "topColor": "#e8392b",
+      "labelColor": "#ffffff",
+      "font": "8px monospace"
+    }
   },
 
   "grid": {
@@ -42,7 +68,15 @@
 
   "explosion": {
     "minRadius": 5,
-    "maxRadius": 100
+    "maxRadius": 100,
+    "ringDuration": 0.45,
+    "ringBlock": 3,
+    "ringColor": "#ffe9a8",
+    "particleCount": 10,
+    "particleSpeed": 110,
+    "particleGravity": 400,
+    "particleLife": 0.6,
+    "particleSize": 2
   },
 
   "debug": {
@@ -53,7 +87,8 @@
     "circleOpacity": 0.35,
     "font": "10px monospace",
     "soldierStartAP": 5,
-    "refillAPKey": "KeyT"
+    "refillAPKey": "KeyT",
+    "respawnDelay": 1.5
   },
 
   "terrainKey": [
