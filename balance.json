@@ -13,6 +13,20 @@
     "opacity": 0.08
   },
 
+  "explosion": {
+    "minRadius": 5,
+    "maxRadius": 100
+  },
+
+  "debug": {
+    "clickToExplode": true,
+    "clickExplosionRadius": 40,
+    "radiusStep": 5,
+    "color": "#ffffff",
+    "circleOpacity": 0.35,
+    "font": "10px monospace"
+  },
+
   "terrainKey": [
     { "type": "open",    "color": "#2b1a0e", "solid": false, "resistance": 0 },
     { "type": "soft",    "color": "#9a6a3c", "solid": true,  "resistance": 1 },

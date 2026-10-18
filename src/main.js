@@ -2,6 +2,7 @@
 
 import { loadTerrain, render as renderTerrain } from './terrain.js';
 import { drawGrid } from './hud.js';
+import { setupClickToExplode } from './input.js';
 
 async function loadBalance() {
   const res = await fetch('balance.json');
@@ -29,12 +30,14 @@ async function start() {
   window.addEventListener('resize', () => fitToWindow(canvas, balance));
 
   await loadTerrain(balance.mapFile, balance);
+  const debugExplode = setupClickToExplode(canvas, balance);
 
   function frame() {
     ctx.fillStyle = balance.canvas.background;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     renderTerrain(ctx);
     drawGrid(ctx, balance);
+    if (debugExplode) debugExplode.draw(ctx);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
