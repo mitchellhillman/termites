@@ -119,8 +119,8 @@ export function planWalkStep(world, s, dir, cfg) {
 
 /**
  * Walk budget: starting to walk spends AP and unlocks pxPerAP of travel. Leftover
- * travel is thrown away by forfeit() (mode switch or turn end, wired in slice 5).
- * `pool` is anything with an `ap` number (the player, from slice 5 on).
+ * travel is thrown away by forfeit() (mode switch or turn end).
+ * `pool` is anything with an `ap` number (the player).
  */
 export class WalkBudget {
   constructor(pxPerAP, apCost) {

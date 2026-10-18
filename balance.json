@@ -12,9 +12,27 @@
   },
 
   "teams": [
-    { "name": "Player 1", "color": "#ffffff", "spawnX": 70 },
-    { "name": "Player 2", "color": "#e8392b", "spawnX": 570 }
+    { "name": "Player 1", "color": "#ffffff", "spawnX": 70, "facing": 1 },
+    { "name": "Player 2", "color": "#e8392b", "spawnX": 570, "facing": -1 }
   ],
+
+  "turns": {
+    "fixedAP": 2,
+    "announceDuration": 2,
+    "settleDelay": 0.5
+  },
+
+  "hud": {
+    "font": "10px monospace",
+    "announceFont": "16px monospace",
+    "color": "#ffffff",
+    "margin": 4,
+    "lineHeight": 12,
+    "announceLineHeight": 22,
+    "panelColor": "#1a0f08",
+    "panelOpacity": 0.75,
+    "inactiveOpacity": 0.5
+  },
 
   "controls": {
     "p1": { "left": "KeyA", "right": "KeyD", "faceUp": "KeyW", "faceDown": "KeyS", "mode": "KeyQ", "fire": "KeyE", "endTurn": "KeyR" },
@@ -86,8 +104,6 @@
     "color": "#ffffff",
     "circleOpacity": 0.35,
     "font": "10px monospace",
-    "soldierStartAP": 5,
-    "refillAPKey": "KeyT",
     "respawnDelay": 1.5
   },
 

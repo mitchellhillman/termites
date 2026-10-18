@@ -1,11 +1,14 @@
 // Entry point: load balance.json and the map, then run the draw loop.
 
 import { loadTerrain, render as renderTerrain, getSize, isSolid, explode, getType, getTypeInfo } from './terrain.js';
-import { drawGrid, drawWalkReadout, drawPowerBar } from './hud.js';
+import { drawGrid, drawPowerBar, drawPlayerReadouts, drawTurnIndicator, drawAnnouncement } from './hud.js';
 import { setupClickToExplode, setupKeyboard, playerControls } from './input.js';
-import { createSoldier, findSurfaceSpawn, updateSoldier, drawSoldier, drawDeadSoldier, WalkBudget } from './units.js';
+import { createSoldier, findSurfaceSpawn, updateSoldier, drawSoldier, drawDeadSoldier } from './units.js';
 import {
-  createAim, moveAim, aimPoint, updateCharge, pressFire, cancelCharge, currentPower, launchSpeed,
+  coinFlip, createPlayer, createTurnState, startTurn, canAct, requestEndTurn, updateTurn, worldSettled,
+} from './turns.js';
+import {
+  moveAim, aimPoint, updateCharge, pressFire, cancelCharge, currentPower, launchSpeed,
   createShot, stepShot, impactAngle, blastRadius, damageUnitsInRadius,
   createExplosion, updateExplosion, drawExplosion, drawAimCursor, drawShot,
 } from './shots.js';
@@ -40,31 +43,32 @@ async function start() {
 
   const world = { ...getSize(), isSolid };
   const boundKeys = Object.values(balance.controls).flatMap((b) => Object.values(b));
-  const keyboard = setupKeyboard([...boundKeys, balance.debug.refillAPKey]);
+  const keyboard = setupKeyboard(boundKeys);
 
-  // Slices 3-4: Player 1 only, with a temporary AP pool until turns exist (slice 5).
   const cfg = balance.soldier;
   const shotCfg = balance.shot;
   const blastCfg = balance.explosion;
-  const team = 0;
-  const color = balance.teams[team].color;
-  const spawnSoldier = () => {
-    const spawn = findSurfaceSpawn(world, balance.teams[team].spawnX, cfg.width, cfg.height);
-    return createSoldier(team, spawn.x, spawn.y, cfg, 1);
+  const turnsCfg = balance.turns;
+  const teamColor = (team) => balance.teams[team].color;
+  // A new soldier on the surface above its side's chamber, facing the middle.
+  const spawnSoldier = (team) => {
+    const t = balance.teams[team];
+    const spawn = findSurfaceSpawn(world, t.spawnX, cfg.width, cfg.height);
+    return createSoldier(team, spawn.x, spawn.y, cfg, t.facing);
   };
-  const player = {
-    team,
-    ap: balance.debug.soldierStartAP,
-    walkBudget: new WalkBudget(cfg.walkPxPerAP, cfg.walkAPCost),
-    controls: playerControls(keyboard, balance.controls.p1),
-    soldier: spawnSoldier(),
-    aim: createAim(shotCfg),
-  };
+  const bindings = [balance.controls.p1, balance.controls.p2];
+  const players = bindings.map((b, team) => {
+    const p = createPlayer(team, playerControls(keyboard, b), cfg, shotCfg);
+    p.soldier = spawnSoldier(team);
+    return p;
+  });
+  const turn = createTurnState(coinFlip(), turnsCfg);
   // One shot in flight at most; input is locked while it flies and its explosion plays.
-  const fx = { shot: null, explosion: null, respawnTimer: 0 };
-  window.termites = { player, fx }; // debug handle for the console and browser tests
+  const fx = { shot: null, explosion: null };
+  window.termites = { players, turn, fx }; // debug handle for the console and browser tests
 
-  const units = () => [player.soldier]; // every unit a shot can hit (more in slices 5-7)
+  const soldiers = () => players.map((p) => p.soldier);
+  const units = soldiers; // every unit a shot can hit, both teams (queens and drones in slices 6-7)
   const center = (s) => ({ x: s.x + s.w / 2, y: s.y + s.h / 2 });
 
   // Dirt color for explosion particles: whatever the shot hit, else soft dirt.
@@ -78,13 +82,29 @@ async function start() {
     const radius = blastRadius(impactAngle(shot.vx, shot.vy), blastCfg.minRadius, blastCfg.maxRadius);
     const particleColor = dirtColor(shot.x, shot.y); // read before the blast clears it
     explode(shot.x, shot.y, radius);
-    damageUnitsInRadius(units(), shot.x, shot.y, radius);
+    damageUnitsInRadius(units(), shot.x, shot.y, radius); // friendly fire included
     fx.explosion = createExplosion(shot.x, shot.y, radius, particleColor, blastCfg);
   }
 
-  function handleControls(dt) {
+  // Debug stand-in for slice 7's respawn rules: a dead soldier comes back at its
+  // spawn point, keeping its facing.
+  function respawn(player) {
+    const old = player.soldier;
+    player.soldier = spawnSoldier(player.team);
+    player.soldier.facing = old.facing;
+    player.respawnTimer = 0;
+  }
+
+  // Start of a turn. Slice 7 replaces the dead-soldier respawn here with the queen
+  // rules; turns.js startTurn() is where drones will set the AP.
+  function beginTurn(player) {
+    if (player.soldier.dead) respawn(player);
+    startTurn(player, turnsCfg);
+  }
+
+  // The active player's keys. Returns their walk direction (-1, 0, 1).
+  function handleControls(player, dt) {
     const { controls, soldier, aim } = player;
-    if (keyboard.wasPressed(balance.debug.refillAPKey)) player.ap = balance.debug.soldierStartAP;
     if (controls.pressed('mode')) {
       aim.mode = aim.mode === 'walk' ? 'shoot' : 'walk';
       player.walkBudget.forfeit(); // leftover walk travel is lost on any mode switch
@@ -111,10 +131,15 @@ async function start() {
     const dt = last === null ? 0 : Math.min(balance.timing.maxFrameDt, (now - last) / 1000);
     last = now;
 
-    const soldier = player.soldier;
-    const locked = fx.shot || fx.explosion || soldier.dead;
-    const walkDir = locked ? 0 : handleControls(dt);
-    if (!soldier.dead) updateSoldier(world, soldier, dt, cfg, walkDir, player.walkBudget, player);
+    // Input: only the active player's keys count. End Turn is accepted even while
+    // a shot flies; the handover still waits for things to settle.
+    const active = players[turn.active];
+    if (canAct(turn, turn.active) && active.controls.pressed('endTurn')) requestEndTurn(turn, active);
+    const locked = fx.shot || fx.explosion || active.soldier.dead;
+    players.forEach((p, i) => {
+      const walkDir = canAct(turn, i) && !locked ? handleControls(p, dt) : 0;
+      if (!p.soldier.dead) updateSoldier(world, p.soldier, dt, cfg, walkDir, p.walkBudget, p);
+    });
     keyboard.endFrame();
 
     if (fx.shot) {
@@ -123,35 +148,36 @@ async function start() {
       if (result !== 'flying') fx.shot = null;
     }
     if (fx.explosion && !updateExplosion(fx.explosion, dt, blastCfg)) fx.explosion = null;
-    // Debug stand-in for slice 7's next-turn respawn: back at the spawn after a delay.
-    if (soldier.dead && !fx.explosion) {
-      fx.respawnTimer += dt;
-      if (fx.respawnTimer >= balance.debug.respawnDelay) {
-        fx.respawnTimer = 0;
-        player.soldier = spawnSoldier();
-        player.soldier.facing = soldier.facing;
-      }
+    for (const p of players) {
+      if (!p.soldier.dead || fx.explosion) continue;
+      p.respawnTimer += dt;
+      if (p.respawnTimer >= balance.debug.respawnDelay) respawn(p);
     }
+
+    if (updateTurn(turn, dt, players, worldSettled(world, fx, soldiers()), turnsCfg)) beginTurn(players[turn.active]);
 
     ctx.fillStyle = balance.canvas.background;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     renderTerrain(ctx);
     drawGrid(ctx, balance);
-    const s = player.soldier;
-    if (s.dead) drawDeadSoldier(ctx, s, color);
-    else {
+    players.forEach((p, i) => {
+      const s = p.soldier;
+      const color = teamColor(p.team);
+      if (s.dead) return drawDeadSoldier(ctx, s, color);
       drawSoldier(ctx, s, color, cfg.eyeColor);
-      if (player.aim.mode === 'shoot' && !fx.shot) {
+      if (canAct(turn, i) && p.aim.mode === 'shoot' && !fx.shot) {
         const c = center(s);
-        const p = aimPoint(c.x, c.y, player.aim.angle, s.facing, shotCfg.aimArcRadius);
-        drawAimCursor(ctx, p.x, p.y, color);
-        if (player.aim.charging) drawPowerBar(ctx, balance, s, currentPower(player.aim));
+        const pt = aimPoint(c.x, c.y, p.aim.angle, s.facing, shotCfg.aimArcRadius);
+        drawAimCursor(ctx, pt.x, pt.y, color);
+        if (p.aim.charging) drawPowerBar(ctx, balance, s, currentPower(p.aim));
       }
-    }
-    if (fx.shot) drawShot(ctx, fx.shot, color, shotCfg.size);
+    });
+    if (fx.shot) drawShot(ctx, fx.shot, teamColor(fx.shot.owner.team), shotCfg.size);
     if (fx.explosion) drawExplosion(ctx, fx.explosion, blastCfg);
     if (debugExplode) debugExplode.draw(ctx);
-    drawWalkReadout(ctx, balance, player);
+    drawTurnIndicator(ctx, balance, players, turn);
+    drawPlayerReadouts(ctx, balance, players, turn);
+    drawAnnouncement(ctx, balance, players, turn);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);

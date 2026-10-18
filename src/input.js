@@ -1,5 +1,5 @@
 // Input. Keyboard state (slice 3), mapped to per-player actions through the
-// bindings in balance.controls (P1 now, P2 in slice 5).
+// bindings in balance.controls.p1 / p2 (P2 from slice 5).
 // Slice 2: the debug click-to-explode harness (gated by balance.debug.clickToExplode).
 
 import { explode } from './terrain.js';
@@ -40,6 +40,7 @@ export function setupKeyboard(bound = []) {
  */
 export function playerControls(keyboard, bindings) {
   return {
+    bindings,
     held: (action) => keyboard.isDown(bindings[action]),
     pressed: (action) => keyboard.wasPressed(bindings[action]),
     /** -1, 0 or 1 from the left/right keys (both held cancel out). */
