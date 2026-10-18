@@ -3,11 +3,15 @@
 import {
   loadTerrain, resetTerrain, render as renderTerrain, getSize, isSolid, explode, dig, resistanceAt, getType, getTypeInfo,
 } from './terrain.js';
-import { drawGrid, drawPowerBar, drawPlayerReadouts, drawTurnIndicator, drawAnnouncement, drawWinScreen } from './hud.js';
-import { setupClickToExplode, setupKeyboard, playerControls } from './input.js';
 import {
-  createSoldier, findSurfaceSpawn, updateSoldier, drawSoldier, drawDeadUnit,
+  drawGrid, drawPowerBar, drawPlayerReadouts, drawTurnIndicator, drawAnnouncement, drawWinScreen, drawTitleScreen,
+} from './hud.js';
+import { setupClickToExplode, setupKeyboard, playerControls } from './input.js';
+import { loadSprites } from './sprites.js';
+import {
+  createSoldier, findSurfaceSpawn, updateSoldier, drawSoldier, soldierFrame,
   spawnQueen, updateQueen, drawQueen, drawHealthDots, spawnDrones, updateDrone, drawDrone,
+  deathPhase, ageDeath, anyDying, drawSkull,
 } from './units.js';
 import {
   coinFlip, createPlayer, createTurnState, startTurn, turnStartSpawn, canAct, requestEndTurn, updateTurn, worldSettled,
@@ -45,6 +49,8 @@ async function start() {
   window.addEventListener('resize', () => fitToWindow(canvas, balance));
 
   await loadTerrain(balance.mapFile, balance);
+  // Every sprite pre-tinted once per team color (and the skull outline color).
+  const sprites = await loadSprites(balance, [...balance.teams.map((t) => t.color), balance.death.skullOutlineColor]);
   const debugExplode = setupClickToExplode(canvas, balance);
 
   const world = { ...getSize(), isSolid, resistanceAt, dig };
@@ -58,6 +64,7 @@ async function start() {
   const turnsCfg = balance.turns;
   const queenCfg = balance.queen;
   const droneCfg = balance.drone;
+  const deathCfg = balance.death;
   const teamColor = (team) => balance.teams[team].color;
   // A new soldier on the surface above its side's chamber, facing the middle.
   const spawnSoldier = (team) => {
@@ -77,8 +84,8 @@ async function start() {
     return spawnQueen(world, team, t.queenX, queenCfg, t.facing);
   };
   const queens = players.map((p) => placeQueen(p.team));
-  // Both teams' drones in one list. Dead ones stay for droneCfg.corpseTime (the
-  // placeholder death mark), then are removed.
+  // Both teams' drones in one list. Dead ones stay while their skull shows
+  // (deathCfg.skullTime), then are removed.
   const drones = [];
   const droneCount = (team) => drones.reduce((n, d) => n + (d.team === team && !d.dead ? 1 : 0), 0);
   // n new drones at a team's queen's base (no cap here: turnStartSpawn applies it).
@@ -91,6 +98,12 @@ async function start() {
   };
   seedDrones();
   const turn = createTurnState(coinFlip(), turnsCfg);
+  // 'title' until any key is pressed, then 'play' (the turn state takes over from
+  // its coin flip). Restarting after a win goes straight to a new coin flip.
+  const game = { screen: 'title', time: 0 };
+  const startGame = () => {
+    game.screen = 'play';
+  };
   // One shot in flight at most; input is locked while it flies and its explosion plays.
   const fx = { shot: null, explosion: null };
 
@@ -140,7 +153,7 @@ async function start() {
   }
 
   // Debug handle for the console and browser tests.
-  window.termites = { players, queens, drones, turn, fx, blast, restart, addDrones, droneCount };
+  window.termites = { players, queens, drones, turn, fx, game, blast, restart, startGame, addDrones, droneCount };
 
   // Start of a turn: the queen spawns drones, or a new soldier if hers is dead
   // (the rule is in turns.js turnStartSpawn), then AP comes from the drone count.
@@ -179,6 +192,12 @@ async function start() {
   function frame(now) {
     const dt = last === null ? 0 : Math.min(balance.timing.maxFrameDt, (now - last) / 1000);
     last = now;
+    game.time += dt;
+
+    // Title screen: any key starts the game. The world (drones) runs behind it,
+    // but the turn state (the coin flip timer) waits.
+    const onTitle = game.screen === 'title';
+    if (onTitle && keyboard.anyPressed()) startGame();
 
     // Input: only the active player's keys count. End Turn is accepted even while
     // a shot flies; the handover still waits for things to settle.
@@ -205,46 +224,65 @@ async function start() {
     // itself waits for the explosion to finish and the world to settle.
     checkGameOver(turn, players, queens);
     if (fx.explosion && !updateExplosion(fx.explosion, dt, blastCfg)) fx.explosion = null;
-    for (let i = drones.length - 1; i >= 0; i--) {
-      const d = drones[i];
-      if (d.dead && (d.deadTime += dt) >= droneCfg.corpseTime) drones.splice(i, 1);
-    }
+    // Death skulls: every dead unit's clock runs; dead drones leave the list once
+    // their skull is done (dead soldiers and queens just stop being drawn).
+    for (const u of units()) ageDeath(u, dt);
+    for (let i = drones.length - 1; i >= 0; i--) if (deathPhase(drones[i], deathCfg) === 'gone') drones.splice(i, 1);
 
-    if (updateTurn(turn, dt, players, worldSettled(world, fx, gravityUnits()), turnsCfg)) beginTurn(players[turn.active]);
+    // A dying queen (skull still up) also holds back the win screen, so she is
+    // seen dying before it appears.
+    const settled = worldSettled(world, fx, gravityUnits()) && !anyDying(queens, deathCfg);
+    if (!onTitle && updateTurn(turn, dt, players, settled, turnsCfg)) beginTurn(players[turn.active]);
 
     ctx.fillStyle = balance.canvas.background;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     renderTerrain(ctx);
     drawGrid(ctx, balance);
+    // Units: alive ones normally; dying ones dimmed and frozen with a skull over
+    // them (skulls drawn after every unit so none is covered); gone ones not at all.
+    const skulls = [];
+    const drawUnit = (u, draw) => {
+      const phase = deathPhase(u, deathCfg);
+      if (phase === 'gone') return false;
+      if (phase === 'dying') {
+        skulls.push(u);
+        ctx.globalAlpha = deathCfg.corpseOpacity;
+      }
+      draw();
+      ctx.globalAlpha = 1;
+      return true;
+    };
     for (const q of queens) {
       const color = teamColor(q.team);
-      if (q.dead) drawDeadUnit(ctx, q, color);
-      else drawQueen(ctx, q, color, queenCfg.eyeColor);
-      drawHealthDots(ctx, q, color, queenCfg.dots);
+      if (drawUnit(q, () => drawQueen(ctx, sprites, q, color))) drawHealthDots(ctx, q, color, queenCfg.dots);
     }
-    for (const d of drones) {
-      if (d.dead) drawDeadUnit(ctx, d, teamColor(d.team));
-      else drawDrone(ctx, d, teamColor(d.team), droneCfg);
-    }
+    for (const d of drones) drawUnit(d, () => drawDrone(ctx, sprites, d, teamColor(d.team), droneCfg));
     players.forEach((p, i) => {
       const s = p.soldier;
       const color = teamColor(p.team);
-      if (s.dead) return drawDeadUnit(ctx, s, color);
-      drawSoldier(ctx, s, color, cfg.eyeColor);
-      if (canAct(turn, i) && p.aim.mode === 'shoot' && !fx.shot) {
+      const aiming = canAct(turn, i) && p.aim.mode === 'shoot' && !fx.shot && !s.dead;
+      drawUnit(s, () => drawSoldier(ctx, sprites, s, color, soldierFrame(s, cfg, aiming ? p.aim : null)));
+      if (aiming) {
         const c = center(s);
         const pt = aimPoint(c.x, c.y, p.aim.angle, s.facing, shotCfg.aimArcRadius);
-        drawAimCursor(ctx, pt.x, pt.y, color);
+        drawAimCursor(ctx, sprites, pt.x, pt.y, color);
         if (p.aim.charging) drawPowerBar(ctx, balance, s, currentPower(p.aim));
       }
     });
+    for (const u of skulls) drawSkull(ctx, sprites, u, teamColor(u.team), deathCfg);
     if (fx.shot) drawShot(ctx, fx.shot, teamColor(fx.shot.owner.team), shotCfg.size);
     if (fx.explosion) drawExplosion(ctx, fx.explosion, blastCfg);
     if (debugExplode) debugExplode.draw(ctx);
-    drawTurnIndicator(ctx, balance, players, turn);
-    drawPlayerReadouts(ctx, balance, players, turn, players.map((p) => droneCount(p.team)));
-    drawAnnouncement(ctx, balance, players, turn);
-    drawWinScreen(ctx, balance, players, turn);
+    if (onTitle) {
+      drawTitleScreen(ctx, balance, sprites, game.time);
+    } else {
+      // A soldier or queen under a bottom HUD corner makes that corner fade.
+      const occluders = gravityUnits().filter((u) => deathPhase(u, deathCfg) !== 'gone');
+      drawTurnIndicator(ctx, balance, players, turn);
+      drawPlayerReadouts(ctx, balance, sprites, players, turn, players.map((p) => droneCount(p.team)), occluders);
+      drawAnnouncement(ctx, balance, players, turn);
+      drawWinScreen(ctx, balance, players, turn);
+    }
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);

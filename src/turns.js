@@ -2,6 +2,7 @@
 // Slice 6: win rules, the game-over phase and restart.
 // Slice 7: the queen's start-of-turn spawn (drones, or a new soldier) and AP from
 // the drone count.
+// Slice 8: apStart (AP granted this turn) for the HUD's AP tokens.
 //
 // Pure state with no DOM, so node can test it. main.js owns the loop: it calls
 // updateTurn() every frame and startTurn() whenever updateTurn() says a new turn
@@ -81,6 +82,7 @@ export function resetTurnState(turn, first, cfg) {
 /** Restart: back to a new player's state (no AP, no walk, fresh aim). The caller respawns the soldier. */
 export function resetPlayer(player, shotCfg) {
   player.ap = 0;
+  player.apStart = 0;
   player.walkBudget.forfeit();
   player.aim = createAim(shotCfg);
 }
@@ -95,6 +97,7 @@ export function createPlayer(team, controls, soldierCfg, shotCfg) {
   return {
     team,
     ap: 0,
+    apStart: 0, // AP granted at the start of this player's latest turn (HUD tokens)
     walkBudget: new WalkBudget(soldierCfg.walkPxPerAP, soldierCfg.walkAPCost),
     controls,
     soldier: null,
@@ -143,6 +146,7 @@ export function turnStartSpawn(player, liveDrones, droneCfg) {
  */
 export function startTurn(player, cfg, droneCount) {
   player.ap = turnAP(droneCount, cfg);
+  player.apStart = player.ap;
   player.walkBudget.forfeit();
   player.aim.mode = 'walk';
   cancelCharge(player.aim);

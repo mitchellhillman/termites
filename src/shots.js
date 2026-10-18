@@ -1,10 +1,13 @@
 // Shots (slice 4): aiming, the PWR "quicktime" bar, projectile flight, blast
 // radius from impact angle, blast damage, and the explosion effect.
+// Slice 8: the aim cursor sprite, and a crisper explosion ring.
 //
 // Everything except the draw* functions is pure math with no DOM, so it can be
 // tested in node. Flight runs against the same `world` as units.js
 // ({ width, height, isSolid(x, y) }). Angles are degrees: 0 = horizontal, 90 =
 // straight up. Screen y grows downward, so "up" is negative vy.
+
+import { drawFrame } from './sprites.js';
 
 const DEG = Math.PI / 180;
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -182,14 +185,18 @@ export function damageUnitsInRadius(units, cx, cy, r) {
 
 /**
  * Expanding blocky ring plus a few particles, at (x, y) growing to `radius`.
- * cfg: balance.explosion. rand: () => 0..1 (Math.random by default).
+ * Particles start scattered within cfg.particleSpread x radius of the center (so
+ * a big blast throws dirt from across its crater, not just a speck in the middle)
+ * and fly up and out. cfg: balance.explosion. rand: () => 0..1 (Math.random by default).
  */
 export function createExplosion(x, y, radius, particleColor, cfg, rand = Math.random) {
   const particles = [];
   for (let i = 0; i < cfg.particleCount; i++) {
     const a = -Math.PI * rand(); // upward half
     const v = cfg.particleSpeed * (0.4 + 0.6 * rand());
-    particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v });
+    const d = radius * cfg.particleSpread * Math.sqrt(rand());
+    const pa = rand() * Math.PI * 2;
+    particles.push({ x: x + Math.cos(pa) * d, y: y + Math.sin(pa) * d, vx: Math.cos(a) * v, vy: Math.sin(a) * v });
   }
   return { x, y, radius, t: 0, particles, particleColor };
 }
@@ -214,17 +221,21 @@ export function drawExplosion(ctx, e, cfg) {
     const count = Math.max(8, Math.ceil((2 * Math.PI * r) / b));
     ctx.globalAlpha = 1 - k;
     ctx.fillStyle = cfg.ringColor;
+    const seen = new Set(); // snapped blocks repeat on small rings; overlaps would show brighter
     for (let i = 0; i < count; i++) {
       const a = (i / count) * Math.PI * 2;
-      // Snap to the block grid so the ring reads as chunky pixels.
+      // Snap to the block grid so the ring reads as chunky, whole-pixel blocks.
       const bx = Math.round((e.x + Math.cos(a) * r) / b) * b;
       const by = Math.round((e.y + Math.sin(a) * r) / b) * b;
-      ctx.fillRect(bx - b / 2, by - b / 2, b, b);
+      const id = `${bx},${by}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      ctx.fillRect(bx - Math.floor(b / 2), by - Math.floor(b / 2), b, b);
     }
   }
   const pk = Math.min(1, e.t / cfg.particleLife);
   if (pk < 1) {
-    ctx.globalAlpha = 1 - pk;
+    ctx.globalAlpha = 1 - pk * pk; // stay solid most of their flight, fade at the end
     ctx.fillStyle = e.particleColor;
     const s = cfg.particleSize;
     for (const p of e.particles) ctx.fillRect(Math.round(p.x), Math.round(p.y), s, s);
@@ -232,15 +243,12 @@ export function drawExplosion(ctx, e, cfg) {
   ctx.restore();
 }
 
-// --- Placeholder art (real sprites in slice 8) -------------------------------------
+// --- Art ----------------------------------------------------------------------------
 
-/** Aim cursor: a tiny team-colored plus sign on the arc. */
-export function drawAimCursor(ctx, x, y, color) {
-  const cx = Math.round(x);
-  const cy = Math.round(y);
-  ctx.fillStyle = color;
-  ctx.fillRect(cx - 2, cy, 5, 1);
-  ctx.fillRect(cx, cy - 2, 1, 5);
+/** Aim cursor: the tiny team-colored cursor sprite centered on the arc point. */
+export function drawAimCursor(ctx, sprites, x, y, color) {
+  const { frameWidth: fw, frameHeight: fh } = sprites.def('cursor');
+  drawFrame(ctx, sprites, 'cursor', 0, color, Math.round(x) - Math.floor(fw / 2), Math.round(y) - Math.floor(fh / 2));
 }
 
 /** The shot: a small team-colored block, or a tick on the top edge while it is above the screen. */

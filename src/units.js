@@ -1,13 +1,16 @@
 // Units (soldiers, queens, drones). Slice 3: one soldier that falls, walks and
 // climbs, plus the walk budget. Slice 4: hit points and a placeholder death.
 // Slice 6: queens (3 hp, health dots, fall like soldiers). Slice 7: drones that
-// wander, tunnel and cling to dirt on their own.
+// wander, tunnel and cling to dirt on their own. Slice 8: sprites, walk
+// animation and the death skull (see the death timing helpers below).
 //
 // Movement is pure grid math against a `world` ({ width, height, isSolid(x, y) },
 // plus resistanceAt(x, y) and dig(x, y, r) for drones) with no DOM, so it can be
 // tested in node against a synthetic grid. Soldier and queen positions are whole
 // pixels (x, y = top-left of the rect); fractional speed is accumulated. Drones
 // keep a fractional center (cx, cy) and derive their rect from it.
+
+import { drawFrame, drawFrameOriented } from './sprites.js';
 
 /** True if a w x h rect at (x, y) is inside the map and overlaps no solid pixel. */
 export function rectFree(world, x, y, w, h) {
@@ -75,6 +78,9 @@ export function createSoldier(team, x, y, cfg, facing = 1) {
     canStartWalk: true, // false after a walk spent AP, until the walk key is released
     hp: cfg.hitsToKill, // hits left; blasts take 1 (shots.js damageUnitsInRadius)
     dead: false,
+    deadTime: 0, // seconds since death (see deathPhase)
+    walked: 0, // px walked in total, drives the walk animation
+    stillTime: Infinity, // seconds since the last walk step (walk animation)
   };
 }
 
@@ -189,6 +195,7 @@ export function fall(world, u, dt, cfg) {
  */
 export function updateSoldier(world, s, dt, cfg, walkDir, budget, pool) {
   if (!walkDir) s.canStartWalk = true;
+  s.stillTime += dt;
 
   if (!isSupported(world, s)) {
     s.clingDir = 0;
@@ -221,42 +228,74 @@ export function updateSoldier(world, s, dt, cfg, walkDir, budget, pool) {
     s.y = step.y;
     s.clingDir = step.clingDir;
     s.walkAccum -= step.cost;
+    s.walked += step.cost;
+    s.stillTime = 0;
     if (!isSupported(world, s)) break; // walked off a ledge: falls from next frame
   }
 }
 
 /**
- * Placeholder soldier art (real sprites in slice 8): a team-colored rect with an
- * eye and a gun nub on the side it faces.
+ * Which soldier frame to show (names from balance.sprites.soldier.frames):
+ * walking alternates walk1 / walk2 every cfg.walkFrameDistance px; standing
+ * still is idle. "Walking" means a step within the last cfg.walkAnimHold s, since
+ * at walkSpeed a step doesn't happen every frame. Pass the player's aim while that soldier is aiming (shoot mode
+ * on its turn) to raise the gun with the angle: aimMid from cfg.aimMidAngle,
+ * aimHigh from cfg.aimHighAngle.
  */
-export function drawSoldier(ctx, s, color, eyeColor) {
-  ctx.fillStyle = color;
-  ctx.fillRect(s.x, s.y, s.w, s.h);
-  const front = s.facing > 0 ? s.x + s.w : s.x;
-  ctx.fillRect(s.facing > 0 ? front : front - 4, s.y + 10, 4, 2);
-  ctx.fillStyle = eyeColor;
-  ctx.fillRect(s.facing > 0 ? front - 4 : front + 2, s.y + 3, 2, 2);
+export function soldierFrame(s, cfg, aim = null) {
+  if (s.stillTime < cfg.walkAnimHold) return Math.floor(s.walked / cfg.walkFrameDistance) % 2 === 0 ? 'walk1' : 'walk2';
+  if (aim && aim.mode === 'shoot') {
+    if (aim.angle >= cfg.aimHighAngle) return 'aimHigh';
+    if (aim.angle >= cfg.aimMidAngle) return 'aimMid';
+  }
+  return 'idle';
+}
+
+/** The soldier sprite, mirrored when facing left. frameName: see soldierFrame. */
+export function drawSoldier(ctx, sprites, s, color, frameName) {
+  drawFrame(ctx, sprites, 'soldier', sprites.frameIndex('soldier', frameName), color, s.x, s.y, s.facing < 0);
+}
+
+// --- Death -------------------------------------------------------------------------
+//
+// Any unit that dies stays where it died (dimmed, frozen) with a tiny skull over
+// it for cfg.skullTime seconds (balance.death), then the unit and skull vanish
+// together. u.deadTime counts up from the moment of death (main.js calls
+// ageDeath every frame). Dead drones are then removed from the list; dead
+// soldiers and queens just stop being drawn (the dead soldier stays in place
+// until its queen respawns it).
+
+/** 'alive', 'dying' (skull showing) or 'gone' (skull time over). cfg: balance.death. */
+export function deathPhase(u, cfg) {
+  if (!u.dead) return 'alive';
+  return u.deadTime < cfg.skullTime ? 'dying' : 'gone';
+}
+
+/** Advance a dead unit's death clock. */
+export function ageDeath(u, dt) {
+  if (u.dead) u.deadTime += dt;
+}
+
+/** True while any of `units` is dead with its skull still showing. */
+export function anyDying(units, cfg) {
+  return units.some((u) => u && deathPhase(u, cfg) === 'dying');
 }
 
 /**
- * Placeholder death (the real skull is slice 8): a dimmed team-colored X over
- * where the unit stood, as wide as the unit (soldier or queen).
+ * The death skull centered over the unit, at the scale for its kind
+ * (cfg.skullScale), with a 1px outline in cfg.skullOutlineColor so it reads even
+ * over a unit of the same color.
  */
-export function drawDeadUnit(ctx, s, color) {
-  ctx.save();
-  ctx.globalAlpha = 0.6;
-  ctx.fillStyle = color;
-  const size = s.w;
-  const x0 = s.x;
-  const y0 = s.y + s.h - size;
-  for (let i = 0; i < size; i++) {
-    ctx.fillRect(x0 + i, y0 + i, 2, 2);
-    ctx.fillRect(x0 + size - 1 - i, y0 + i, 2, 2);
+export function drawSkull(ctx, sprites, u, color, cfg) {
+  const scale = cfg.skullScale[u.kind || 'soldier'] || 1;
+  const { frameWidth: fw, frameHeight: fh } = sprites.def('skull');
+  const x = Math.round(u.x + u.w / 2 - (fw * scale) / 2);
+  const y = Math.round(u.y + u.h / 2 - (fh * scale) / 2);
+  for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+    drawFrame(ctx, sprites, 'skull', 0, cfg.skullOutlineColor, x + dx * scale, y + dy * scale, false, scale);
   }
-  ctx.restore();
+  drawFrame(ctx, sprites, 'skull', 0, color, x, y, false, scale);
 }
-
-export const drawDeadSoldier = drawDeadUnit;
 
 // --- Queen -------------------------------------------------------------------------
 
@@ -278,6 +317,7 @@ export function createQueen(team, x, y, cfg, facing = 1) {
     maxHp: cfg.hitsToKill,
     hp: cfg.hitsToKill,
     dead: false,
+    deadTime: 0,
   };
 }
 
@@ -305,7 +345,7 @@ export function healthDots(q) {
 
 // A pixel-art dot: every pixel within radius r of the dot's center (filled), or
 // just the outer 1px ring (hollow). Whole-pixel fillRects keep it crisp.
-function drawDot(ctx, cx, cy, r, filled) {
+export function drawDot(ctx, cx, cy, r, filled) {
   for (let dy = -r; dy < r; dy++) {
     for (let dx = -r; dx < r; dx++) {
       const d = Math.hypot(dx + 0.5, dy + 0.5);
@@ -326,33 +366,9 @@ export function drawHealthDots(ctx, q, color, cfg) {
   dots.forEach((full, i) => drawDot(ctx, x0 + i * step, cy, cfg.radius, full));
 }
 
-/**
- * Placeholder queen art (the real sprite is slice 8): a big blocky body in the
- * team color, with stepped corners, a head on the side it faces, an eye and legs.
- */
-export function drawQueen(ctx, q, color, eyeColor) {
-  const { x, y, w, h, facing } = q;
-  ctx.fillStyle = color;
-  const legH = Math.round(h * 0.12);
-  const bodyTop = y + Math.round(h * 0.3);
-  const bodyBottom = y + h - legH;
-  const step = 4;
-  // Abdomen: a wide block with stepped corners.
-  ctx.fillRect(x + step, bodyTop, w - 2 * step, bodyBottom - bodyTop);
-  ctx.fillRect(x, bodyTop + step, w, bodyBottom - bodyTop - 2 * step);
-  // Head and crown on the facing side.
-  const headW = Math.round(w * 0.38);
-  const headX = facing > 0 ? x + w - headW : x;
-  ctx.fillRect(headX, y + Math.round(h * 0.1), headW, Math.round(h * 0.3));
-  for (let i = 0; i < 3; i++) ctx.fillRect(headX + 2 + i * Math.round((headW - 6) / 2), y, 2, Math.round(h * 0.1));
-  // Legs.
-  for (let i = 0; i < 4; i++) ctx.fillRect(x + 6 + i * Math.round((w - 16) / 3), bodyBottom, 4, legH);
-  // Eye, and a few stripes across the abdomen in the background color.
-  ctx.fillStyle = eyeColor;
-  const eyeX = facing > 0 ? x + w - 8 : x + 4;
-  ctx.fillRect(eyeX, y + Math.round(h * 0.18), 4, 4);
-  const stripeX0 = facing > 0 ? x + 8 : x + headW + 4;
-  for (let i = 0; i < 3; i++) ctx.fillRect(stripeX0 + i * 8, bodyTop + 6, 2, bodyBottom - bodyTop - 12);
+/** The queen sprite, mirrored when facing left. */
+export function drawQueen(ctx, sprites, q, color) {
+  drawFrame(ctx, sprites, 'queen', 0, color, q.x, q.y, q.facing < 0);
 }
 
 // --- Drone -------------------------------------------------------------------------
@@ -468,7 +484,7 @@ export function createDrone(team, cx, cy, heading, cfg) {
     walked: 0, // px moved, drives the leg flicker
     hp: 1,
     dead: false,
-    deadTime: 0, // seconds since death (main.js removes it after cfg.corpseTime)
+    deadTime: 0, // seconds since death (main.js removes it once deathPhase is 'gone')
     x: 0,
     y: 0,
     w: cfg.width,
@@ -673,22 +689,29 @@ export function updateDrone(world, d, dt, cfg, rand = Math.random) {
   syncDroneRect(d, cfg);
 }
 
+/** Leg frame (0 or 1): flips every cfg.legFrameDistance px walked. */
+export function droneFrame(d, cfg) {
+  return Math.floor(d.walked / cfg.legFrameDistance) % 2;
+}
+
 /**
- * Placeholder drone art (the real 2-frame sprite is slice 8): a team-colored
- * rect with three 1px legs on the side of the dirt it clings to, shifting by a
- * pixel every cfg.legFrameDistance px walked.
+ * Sprite orientation for a drone, matching its hit rect (syncDroneRect): the
+ * sprite's head (+x) points along the heading, snapped to the rect's long axis,
+ * and its legs (+y) toward the dirt it last clung to (groundDir) on the other
+ * axis. Returns the matrix { ax, ay, nx, ny } for drawFrameOriented; every entry
+ * is -1, 0 or 1.
  */
-export function drawDrone(ctx, d, color, cfg) {
-  ctx.fillStyle = color;
-  ctx.fillRect(d.x, d.y, d.w, d.h);
-  const shift = Math.floor(d.walked / cfg.legFrameDistance) % 2;
+export function droneOrientation(d) {
+  const hx = Math.cos(d.heading);
+  const hy = Math.sin(d.heading);
   const gx = Math.cos(d.groundDir);
   const gy = Math.sin(d.groundDir);
-  if (d.w >= d.h) {
-    const ly = gy < 0 ? d.y - 1 : d.y + d.h;
-    for (let i = 0; i < 3; i++) ctx.fillRect(d.x + 1 + shift + i * 4, ly, 1, 1);
-  } else {
-    const lx = gx < 0 ? d.x - 1 : d.x + d.w;
-    for (let i = 0; i < 3; i++) ctx.fillRect(lx, d.y + 1 + shift + i * 4, 1, 1);
-  }
+  if (d.w >= d.h) return { ax: hx < 0 ? -1 : 1, ay: 0, nx: 0, ny: gy < 0 ? -1 : 1 };
+  return { ax: 0, ay: hy < 0 ? -1 : 1, nx: gx < 0 ? -1 : 1, ny: 0 };
+}
+
+/** The drone sprite, turned to its heading in 90-degree steps, legs toward the dirt. */
+export function drawDrone(ctx, sprites, d, color, cfg) {
+  const o = droneOrientation(d);
+  drawFrameOriented(ctx, sprites, 'drone', droneFrame(d, cfg), color, d.x + d.w / 2, d.y + d.h / 2, o.ax, o.ay, o.nx, o.ny);
 }

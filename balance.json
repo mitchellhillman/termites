@@ -12,8 +12,8 @@
   },
 
   "teams": [
-    { "name": "Player 1", "color": "#ffffff", "spawnX": 70, "queenX": 70, "facing": 1 },
-    { "name": "Player 2", "color": "#e8392b", "spawnX": 570, "queenX": 570, "facing": -1 }
+    { "name": "Player 1", "short": "P1", "color": "#ffffff", "spawnX": 70, "queenX": 70, "facing": 1 },
+    { "name": "Player 2", "short": "P2", "color": "#e8392b", "spawnX": 570, "queenX": 570, "facing": -1 }
   ],
 
   "turns": {
@@ -40,7 +40,28 @@
     "announceLineHeight": 22,
     "panelColor": "#1a0f08",
     "panelOpacity": 0.75,
-    "inactiveOpacity": 0.5
+    "inactiveOpacity": 0.65,
+    "occludedOpacity": 0.3,
+    "rowGap": 2,
+    "itemGap": 6,
+    "token": { "radius": 3, "spacing": 2 },
+    "walkBar": { "width": 40, "height": 5, "backColor": "#000000", "backOpacity": 0.6 },
+    "turnOverText": "turn over..."
+  },
+
+  "title": {
+    "text": "Termites",
+    "font": "bold 48px monospace",
+    "subtitle": "Two players, one keyboard. Destroy the enemy queen!",
+    "headingFont": "12px monospace",
+    "promptText": "press any key",
+    "promptFont": "14px monospace",
+    "blinkPeriod": 1.0,
+    "panelWidth": 440,
+    "panelHeight": 300,
+    "panelOpacity": 0.85,
+    "columnGap": 210,
+    "spriteScale": 2
   },
 
   "controls": {
@@ -59,7 +80,10 @@
     "gravity": 600,
     "maxFallSpeed": 400,
     "hitsToKill": 1,
-    "eyeColor": "#1a0f08"
+    "walkFrameDistance": 4,
+    "walkAnimHold": 0.1,
+    "aimMidAngle": 25,
+    "aimHighAngle": 60
   },
 
   "queen": {
@@ -69,7 +93,6 @@
     "spawnScanY": 360,
     "gravity": 600,
     "maxFallSpeed": 400,
-    "eyeColor": "#1a0f08",
     "dots": { "radius": 3, "spacing": 4, "gap": 4 }
   },
 
@@ -94,8 +117,22 @@
     "spawnPerTurn": 5,
     "cap": 50,
     "spawnSpread": 24,
-    "corpseTime": 0.6,
     "legFrameDistance": 2
+  },
+
+  "death": {
+    "skullTime": 1.0,
+    "corpseOpacity": 0.55,
+    "skullOutlineColor": "#1a0f08",
+    "skullScale": { "drone": 1, "soldier": 1, "queen": 3 }
+  },
+
+  "sprites": {
+    "drone":   { "file": "sprites/drone.png",   "frameWidth": 12, "frameHeight": 4,  "frames": ["walk1", "walk2"] },
+    "soldier": { "file": "sprites/soldier.png", "frameWidth": 12, "frameHeight": 24, "frames": ["idle", "walk1", "walk2", "aimMid", "aimHigh"] },
+    "queen":   { "file": "sprites/queen.png",   "frameWidth": 64, "frameHeight": 64, "frames": ["idle"] },
+    "skull":   { "file": "sprites/skull.png",   "frameWidth": 7,  "frameHeight": 7,  "frames": ["skull"] },
+    "cursor":  { "file": "sprites/cursor.png",  "frameWidth": 5,  "frameHeight": 5,  "frames": ["cursor"] }
   },
 
   "shot": {
@@ -135,15 +172,16 @@
     "ringDuration": 0.45,
     "ringBlock": 3,
     "ringColor": "#ffe9a8",
-    "particleCount": 10,
+    "particleCount": 14,
     "particleSpeed": 110,
     "particleGravity": 400,
     "particleLife": 0.6,
-    "particleSize": 2
+    "particleSize": 3,
+    "particleSpread": 0.5
   },
 
   "debug": {
-    "clickToExplode": true,
+    "clickToExplode": false,
     "clickExplosionRadius": 40,
     "radiusStep": 5,
     "color": "#ffffff",

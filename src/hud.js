@@ -4,6 +4,16 @@
 // Slice 5: per-player AP corners, the turn indicator and the coin flip announcement.
 // Slice 6: the win screen.
 // Slice 7: each side's drone count next to its AP.
+// Slice 8: the full HUD (AP tokens, drone icon and count, mode, walk bar,
+// controls hint) and the title screen.
+//
+// Layout: top right, "Player N turn" with the active player's controls hint
+// under it. Bottom corners (P1 left, P2 right): each player's name, AP tokens
+// and drone count; above the active player's line, their mode and walk budget
+// bar. A corner fades (hud.occludedOpacity) while a soldier or queen is under it.
+
+import { drawDot } from './units.js';
+import { drawFrame } from './sprites.js';
 
 export function drawGrid(ctx, balance) {
   const { width, height } = balance.canvas;
@@ -43,62 +53,163 @@ function label(ctx, hud, text, x, y, align, color, font = hud.font, h = hud.line
 }
 
 /**
- * Temporary readout (the real HUD is slice 8). Each player's AP and living drone
- * count (droneCounts[i]) sit in their own
- * bottom corner (P1 left, P2 right); the active player's is in full color and
- * underlined, the other dimmed. Above the active player's corner: a status line
- * and a controls hint for that player only. (Debug text is top-left.)
+ * AP tokens for a player, left to right: true = AP remaining (filled), false =
+ * AP spent (or lost) since the start of their latest turn (hollow).
  */
-export function drawPlayerReadouts(ctx, balance, players, turn, droneCounts = []) {
+export function apTokens(player) {
+  const n = Math.max(player.apStart || 0, player.ap);
+  return Array.from({ length: n }, (_, i) => i < player.ap);
+}
+
+/** The controls hint line for a player's current mode (key names via keyLabel). */
+export function controlsHint(player) {
+  const k = (action) => keyLabel(player.controls.bindings[action]);
+  const lr = `${k('left')}/${k('right')}`;
+  const face = `${k('faceUp')}/${k('faceDown')} face`;
+  return player.aim.mode === 'walk'
+    ? `${lr} walk  ${face}  ${k('mode')} shoot mode  ${k('endTurn')} end turn`
+    : `${lr} aim  ${face}  ${k('fire')} power/fire  ${k('mode')} walk mode  ${k('endTurn')} end turn`;
+}
+
+const rectsOverlap = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+// A HUD row is a list of items laid out left to right with hud.itemGap between them:
+//   { text, color }              a text run
+//   { tokens: [bool], color }    AP tokens (pixel dots, filled or hollow)
+//   { sprite, frame, color }     one sprite frame (e.g. the drone icon)
+//   { bar: 0..1, color }         the walk budget bar
+function itemWidth(ctx, hud, item, sprites) {
+  if (item.text !== undefined) return Math.ceil(ctx.measureText(item.text).width);
+  if (item.tokens) {
+    const { radius, spacing } = hud.token;
+    return Math.max(0, item.tokens.length * (radius * 2 + spacing) - spacing);
+  }
+  if (item.sprite) return sprites.def(item.sprite).frameWidth;
+  if (item.bar !== undefined) return hud.walkBar.width + 2;
+  return 0;
+}
+
+function rowWidth(ctx, hud, items, sprites) {
+  ctx.font = hud.font;
+  const widths = items.map((it) => itemWidth(ctx, hud, it, sprites));
+  return { widths, total: widths.reduce((a, w) => a + w, 0) + hud.itemGap * Math.max(0, items.length - 1) };
+}
+
+/** Draw a row with its left edge at x0 and its middle at y, on a backing panel. */
+function drawRow(ctx, hud, items, sprites, x0, y, layout) {
+  const h = hud.lineHeight;
+  const alpha = ctx.globalAlpha;
+  ctx.globalAlpha = alpha * hud.panelOpacity;
+  ctx.fillStyle = hud.panelColor;
+  ctx.fillRect(Math.floor(x0) - 2, Math.round(y - h / 2), layout.total + 4, h);
+  ctx.globalAlpha = alpha;
+  ctx.font = hud.font;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  let x = Math.round(x0);
+  items.forEach((it, i) => {
+    const w = layout.widths[i];
+    if (it.text !== undefined) {
+      ctx.fillStyle = it.color;
+      ctx.fillText(it.text, x, y);
+    } else if (it.tokens) {
+      const { radius, spacing } = hud.token;
+      ctx.fillStyle = it.color;
+      it.tokens.forEach((full, k) => drawDot(ctx, x + radius + k * (radius * 2 + spacing), Math.round(y), radius, full));
+    } else if (it.sprite) {
+      const def = sprites.def(it.sprite);
+      drawFrame(ctx, sprites, it.sprite, it.frame || 0, it.color, x, Math.round(y - def.frameHeight / 2));
+    } else if (it.bar !== undefined) {
+      const bar = hud.walkBar;
+      const by = Math.round(y - bar.height / 2);
+      ctx.globalAlpha = alpha * bar.backOpacity;
+      ctx.fillStyle = bar.backColor;
+      ctx.fillRect(x, by, bar.width + 2, bar.height);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = it.color;
+      // 1px outline, then the fill for the remaining budget.
+      ctx.fillRect(x, by, bar.width + 2, 1);
+      ctx.fillRect(x, by + bar.height - 1, bar.width + 2, 1);
+      ctx.fillRect(x, by, 1, bar.height);
+      ctx.fillRect(x + bar.width + 1, by, 1, bar.height);
+      const fill = Math.round(bar.width * Math.min(1, Math.max(0, it.bar)));
+      if (fill > 0) ctx.fillRect(x + 1, by + 1, fill, bar.height - 2);
+    }
+    x += w + hud.itemGap;
+  });
+}
+
+/**
+ * Bottom corners, one per player (P1 left, P2 right): name, AP tokens and the
+ * drone icon with the side's living drone count (droneCounts[i]). The active
+ * player's corner is full strength and underlined, the other dimmed; above the
+ * active player's line sits their mode with the walk budget bar (walk) or aim
+ * angle (shoot). `occluders` are unit rects ({ x, y, w, h }): a corner fades
+ * while one overlaps it, so a queen on the bedrock stays visible.
+ */
+export function drawPlayerReadouts(ctx, balance, sprites, players, turn, droneCounts = [], occluders = []) {
   const { width, height } = balance.canvas;
   const hud = balance.hud;
   const lh = hud.lineHeight;
-  const rowY = (row) => height - hud.margin - lh / 2 - row * lh; // row 0 = bottom line
+  const rowY = (row) => height - hud.margin - lh / 2 - row * (lh + hud.rowGap); // row 0 = bottom line
+  const inPlay = turn.phase === 'play' || turn.phase === 'ending';
   ctx.save();
   players.forEach((p, i) => {
+    const team = balance.teams[p.team];
     const right = i % 2 === 1;
-    const active = turn.phase !== 'announce' && turn.phase !== 'over' && turn.active === i;
-    const x = right ? width - hud.margin : hud.margin;
-    const color = balance.teams[p.team].color;
-    ctx.globalAlpha = active ? 1 : hud.inactiveOpacity;
-    const w = label(ctx, hud, `${balance.teams[p.team].name}  AP ${p.ap}  drones ${droneCounts[i] ?? 0}`, x, rowY(0), right ? 'right' : 'left', color);
+    const active = inPlay && turn.active === i;
+    const tokens = apTokens(p);
+    const rows = [
+      [
+        { text: team.short || team.name, color: team.color },
+        { text: 'AP', color: hud.color },
+        tokens.length ? { tokens, color: team.color } : { text: '-', color: hud.color },
+        { sprite: 'drone', frame: 0, color: team.color },
+        { text: String(droneCounts[i] ?? 0), color: hud.color },
+      ],
+    ];
     if (active) {
-      ctx.fillStyle = color;
-      ctx.fillRect(right ? x - w : x, rowY(0) + lh / 2 - 2, w, 1);
+      const { aim } = p;
+      if (turn.phase === 'ending') rows.push([{ text: hud.turnOverText, color: hud.color }]);
+      else if (aim.mode === 'walk') {
+        rows.push([
+          { text: 'WALK', color: hud.color },
+          { bar: p.walkBudget.remaining / p.walkBudget.pxPerAP, color: team.color },
+        ]);
+      } else rows.push([{ text: `SHOOT ${Math.round(aim.angle)}°`, color: hud.color }]);
+    }
+    const layouts = rows.map((r) => rowWidth(ctx, hud, r, sprites));
+    const boxes = layouts.map((l, r) => ({
+      x: right ? width - hud.margin - l.total - 2 : hud.margin - 2,
+      y: Math.round(rowY(r) - lh / 2),
+      w: l.total + 4,
+      h: lh,
+    }));
+    const occluded = occluders.some((u) => boxes.some((b) => rectsOverlap(b, u)));
+    ctx.globalAlpha = (active ? 1 : hud.inactiveOpacity) * (occluded ? hud.occludedOpacity : 1);
+    rows.forEach((items, r) => drawRow(ctx, hud, items, sprites, boxes[r].x + 2, rowY(r), layouts[r]));
+    if (active) {
+      ctx.fillStyle = team.color;
+      ctx.fillRect(boxes[0].x + 2, rowY(0) + lh / 2 - 2, layouts[0].total, 1);
     }
   });
-  ctx.globalAlpha = 1;
-
-  if (turn.phase !== 'announce' && turn.phase !== 'over') {
-    const p = players[turn.active];
-    const right = turn.active % 2 === 1;
-    const k = (action) => keyLabel(p.controls.bindings[action]);
-    const { aim } = p;
-    let status;
-    if (turn.phase === 'ending') status = 'turn over...';
-    else if (aim.mode === 'walk') status = `mode walk  walk ${Math.ceil(p.walkBudget.remaining)}px`;
-    else status = `mode shoot  angle ${Math.round(aim.angle)}\u00b0`;
-    const lr = `${k('left')}/${k('right')}`;
-    const face = `${k('faceUp')}/${k('faceDown')} face`;
-    const hint =
-      aim.mode === 'walk'
-        ? `(${lr} walk, ${face}, ${k('mode')} shoot mode, ${k('endTurn')} end turn)`
-        : `(${lr} aim, ${face}, ${k('fire')} power/fire, ${k('mode')} walk mode, ${k('endTurn')} end turn)`;
-    const x = right ? width - hud.margin : hud.margin;
-    const align = right ? 'right' : 'left';
-    label(ctx, hud, hint, x, rowY(1), align, hud.color);
-    label(ctx, hud, status, x, rowY(2), align, hud.color);
-  }
   ctx.restore();
 }
 
-/** "Player 1 turn" in the top-right corner, in the team color. */
+/**
+ * Top right: "Player 1 turn" in the team color and, while they can act, the
+ * active player's controls hint under it.
+ */
 export function drawTurnIndicator(ctx, balance, players, turn) {
   if (turn.phase === 'announce' || turn.phase === 'over') return;
-  const team = balance.teams[players[turn.active].team];
+  const p = players[turn.active];
+  const team = balance.teams[p.team];
   const hud = balance.hud;
+  const x = balance.canvas.width - hud.margin;
+  const y = hud.margin + hud.lineHeight / 2;
   ctx.save();
-  label(ctx, hud, `${team.name} turn`, balance.canvas.width - hud.margin, hud.margin + hud.lineHeight / 2, 'right', team.color);
+  label(ctx, hud, `${team.name} turn`, x, y, 'right', team.color);
+  if (turn.phase === 'play' && !turn.endRequested) label(ctx, hud, controlsHint(p), x, y + hud.lineHeight + hud.rowGap, 'right', hud.color);
   ctx.restore();
 }
 
@@ -132,6 +243,77 @@ export function drawWinScreen(ctx, balance, players, turn) {
   label(ctx, hud, text, width / 2, height / 2, 'center', color, ws.font, ws.lineHeight);
   const prompt = `Press ${keyLabel(ws.restartKey)} to play again`;
   label(ctx, hud, prompt, width / 2, height / 2 + ws.lineHeight / 2 + ws.promptGap, 'center', hud.color);
+  ctx.restore();
+}
+
+// Title screen controls list: [actions, description]; two actions share a line.
+const TITLE_CONTROLS = [
+  [['left', 'right'], 'walk / aim'],
+  [['faceUp', 'faceDown'], 'flip facing'],
+  [['mode'], 'walk / shoot mode'],
+  [['fire'], 'power, then fire'],
+  [['endTurn'], 'end turn'],
+];
+
+/**
+ * Title screen over the (live) map: the game name, a one-line goal, each
+ * player's controls from balance.controls with their soldier sprite, and a
+ * blinking "press any key". t: seconds since the page started (for the blink).
+ */
+export function drawTitleScreen(ctx, balance, sprites, t) {
+  const { width, height } = balance.canvas;
+  const hud = balance.hud;
+  const ts = balance.title;
+  const cx = width / 2;
+  const top = Math.round((height - ts.panelHeight) / 2);
+  ctx.save();
+  ctx.globalAlpha = ts.panelOpacity;
+  ctx.fillStyle = hud.panelColor;
+  ctx.fillRect(Math.round(cx - ts.panelWidth / 2), top, ts.panelWidth, ts.panelHeight);
+  ctx.globalAlpha = 1;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = hud.color;
+  ctx.font = ts.font;
+  ctx.fillText(ts.text, cx, top + 44);
+  ctx.font = hud.font;
+  ctx.fillText(ts.subtitle, cx, top + 80);
+
+  const lh = hud.lineHeight + 4;
+  ['p1', 'p2'].forEach((key, i) => {
+    const team = balance.teams[i];
+    const bindings = balance.controls[key];
+    const colX = Math.round(cx + (i === 0 ? -1 : 1) * (ts.columnGap / 2));
+    const headY = top + 120;
+    const sdef = sprites.def('soldier');
+    const sw = sdef.frameWidth * ts.spriteScale;
+    ctx.font = ts.headingFont;
+    const nameW = Math.ceil(ctx.measureText(team.name).width);
+    const groupX = Math.round(colX - (sw + 6 + nameW) / 2);
+    // Each soldier faces the middle, like on the map.
+    drawFrame(ctx, sprites, 'soldier', 0, team.color, groupX, headY - (sdef.frameHeight * ts.spriteScale) / 2, team.facing < 0, ts.spriteScale);
+    ctx.textAlign = 'left';
+    ctx.fillStyle = team.color;
+    ctx.fillText(team.name, groupX + sw + 6, headY);
+
+    ctx.font = hud.font;
+    const keyColW = 42;
+    const x0 = Math.round(colX - 80);
+    TITLE_CONTROLS.forEach(([actions, desc], r) => {
+      const y = headY + 36 + r * lh;
+      ctx.fillStyle = team.color;
+      ctx.fillText(actions.map((a) => keyLabel(bindings[a])).join(' / '), x0, y);
+      ctx.fillStyle = hud.color;
+      ctx.fillText(desc, x0 + keyColW, y);
+    });
+  });
+
+  if ((t / ts.blinkPeriod) % 1 < 0.6) {
+    ctx.textAlign = 'center';
+    ctx.font = ts.promptFont;
+    ctx.fillStyle = hud.color;
+    ctx.fillText(ts.promptText, cx, top + ts.panelHeight - 26);
+  }
   ctx.restore();
 }
 

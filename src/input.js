@@ -1,13 +1,14 @@
 // Input. Keyboard state (slice 3), mapped to per-player actions through the
 // bindings in balance.controls.p1 / p2 (P2 from slice 5).
 // Slice 2: the debug click-to-explode harness (gated by balance.debug.clickToExplode).
+// Slice 8: anyPressed() for the title screen.
 
 import { explode } from './terrain.js';
 
 /**
  * Keyboard state by KeyboardEvent.code (layout-independent, e.g. "KeyA").
  * isDown(code): held right now. wasPressed(code): went down since the last
- * endFrame() (key auto-repeat ignored). Call endFrame() once per frame after
+ * endFrame() (key auto-repeat ignored). anyPressed(): any key did. Call endFrame() once per frame after
  * reading input. `bound` codes have their browser default suppressed (arrow keys
  * scrolling, "/" quick find).
  */
@@ -30,6 +31,7 @@ export function setupKeyboard(bound = []) {
   return {
     isDown: (code) => down.has(code),
     wasPressed: (code) => pressed.has(code),
+    anyPressed: () => pressed.size > 0,
     endFrame: () => pressed.clear(),
   };
 }
