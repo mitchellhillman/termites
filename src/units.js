@@ -1,10 +1,13 @@
 // Units (soldiers, queens, drones). Slice 3: one soldier that falls, walks and
 // climbs, plus the walk budget. Slice 4: hit points and a placeholder death.
-// Slice 6: queens (3 hp, health dots, fall like soldiers). Drones come in slice 7.
+// Slice 6: queens (3 hp, health dots, fall like soldiers). Slice 7: drones that
+// wander, tunnel and cling to dirt on their own.
 //
-// Movement is pure grid math against a `world` ({ width, height, isSolid(x, y) })
-// with no DOM, so it can be tested in node against a synthetic grid. Positions are
-// whole pixels (x, y = top-left of the rect); fractional speed is accumulated.
+// Movement is pure grid math against a `world` ({ width, height, isSolid(x, y) },
+// plus resistanceAt(x, y) and dig(x, y, r) for drones) with no DOM, so it can be
+// tested in node against a synthetic grid. Soldier and queen positions are whole
+// pixels (x, y = top-left of the rect); fractional speed is accumulated. Drones
+// keep a fractional center (cx, cy) and derive their rect from it.
 
 /** True if a w x h rect at (x, y) is inside the map and overlaps no solid pixel. */
 export function rectFree(world, x, y, w, h) {
@@ -350,4 +353,342 @@ export function drawQueen(ctx, q, color, eyeColor) {
   ctx.fillRect(eyeX, y + Math.round(h * 0.18), 4, 4);
   const stripeX0 = facing > 0 ? x + 8 : x + headW + 4;
   for (let i = 0; i < 3; i++) ctx.fillRect(stripeX0 + i * 8, bodyTop + 6, 2, bodyBottom - bodyTop - 12);
+}
+
+// --- Drone -------------------------------------------------------------------------
+//
+// Drones move on their own in real time, never under player control. Each drone
+// is in one of three states:
+//
+//   falling - nothing solid within supportRadius of its center (digRadius +
+//             touchMargin, i.e. just past its own tunnel wall), e.g. a blast
+//             cleared all the dirt around it. It drops under gravity until dirt
+//             is within hugRadius (bodyRadius + touchMargin), or the map bottom.
+//   'walk'  - clinging to an open surface: the ground, a chamber, or the walls,
+//             floor or ceiling of a tunnel. It never digs. Each 1px step keeps
+//             its body (a bodyRadius disk) out of the dirt and the dirt within
+//             hugRadius, turning as little as possible from its heading to do
+//             so: that follows floors, climbs walls and crawls along ceilings in
+//             any orientation. Away from a wall but still supported (the middle
+//             of a tunnel), it first crawls straight to the nearest dirt.
+//             Each second there is a surfaceDigChance it starts a new tunnel
+//             ('dig'), give or take digSpread: straight down when on the open
+//             surface (nothing solid above it), toward the middle of the map
+//             when underground (so drones work their way out of the chambers).
+//   'dig'   - tunneling. It moves along its heading, which wanders (a random
+//             turn rate re-rolled every ~turnInterval s, up to turnRate) and is
+//             pulled gently toward the middle of the map (centerPull), and
+//             clears a digRadius circle around itself each 1px step. Speed is
+//             speed x the resistance of the hardest dirt that step cuts into (1,
+//             0.75, 0.5). If a step would cut into bedrock it turns around; if
+//             a step would cut into no dirt at all (it broke out into open
+//             space, or turned back into its own tunnel) it switches to 'walk'.
+//
+// So "underground vs surface" is just the mode: a drone digs only while its next
+// step overlaps new dirt in 'dig' mode, and walking an open surface never digs.
+// Open-space movement (walking) is always at full speed.
+// Both modes turn around at the screen edges (centers stay edgeMargin inside).
+
+const DEG = Math.PI / 180;
+const TAU = Math.PI * 2;
+
+const wrapAngle = (a) => {
+  a = (a + Math.PI) % TAU;
+  if (a < 0) a += TAU;
+  return a - Math.PI;
+};
+
+// Pixel offsets within radius r of a point (squared distance < r^2), nearest
+// first, as a flat [dx, dy, dx, dy, ...] array. Cached per radius.
+const offsetCache = new Map();
+function diskOffsets(r) {
+  let offs = offsetCache.get(r);
+  if (offs) return offs;
+  const list = [];
+  const n = Math.ceil(r);
+  for (let dy = -n; dy <= n; dy++) {
+    for (let dx = -n; dx <= n; dx++) if (dx * dx + dy * dy < r * r) list.push([dx, dy]);
+  }
+  list.sort((a, b) => a[0] * a[0] + a[1] * a[1] - (b[0] * b[0] + b[1] * b[1]));
+  offs = Int16Array.from(list.flat());
+  offsetCache.set(r, offs);
+  return offs;
+}
+
+/**
+ * Nearest solid pixel within r of (cx, cy) (measured from the rounded center), or
+ * null. With `diggable`, only dirt that can be dug (resistance > 0) counts.
+ */
+export function nearestSolid(world, cx, cy, r, diggable = false) {
+  const x0 = Math.round(cx);
+  const y0 = Math.round(cy);
+  const offs = diskOffsets(r);
+  for (let i = 0; i < offs.length; i += 2) {
+    const x = x0 + offs[i];
+    const y = y0 + offs[i + 1];
+    if (world.isSolid(x, y) && (!diggable || world.resistanceAt(x, y) > 0)) return { x, y };
+  }
+  return null;
+}
+
+const supportRadius = (cfg) => cfg.digRadius + cfg.touchMargin;
+const hugRadius = (cfg) => cfg.bodyRadius + cfg.touchMargin;
+const droneInBounds = (world, x, y, cfg) =>
+  x >= cfg.edgeMargin && y >= cfg.edgeMargin && x <= world.width - cfg.edgeMargin && y <= world.height - cfg.edgeMargin;
+
+/**
+ * Hit rect from the center: cfg.width x cfg.height (12x4) when heading mostly
+ * sideways, turned on end (4x12) when heading mostly up or down (climbing a wall
+ * or digging a shaft).
+ */
+export function syncDroneRect(d, cfg) {
+  const sideways = Math.abs(Math.cos(d.heading)) >= Math.abs(Math.sin(d.heading));
+  d.w = sideways ? cfg.width : cfg.height;
+  d.h = sideways ? cfg.height : cfg.width;
+  d.x = Math.round(d.cx - d.w / 2);
+  d.y = Math.round(d.cy - d.h / 2);
+}
+
+/** A drone centered at (cx, cy), heading in radians (0 = right, y down). One hit kills it. */
+export function createDrone(team, cx, cy, heading, cfg) {
+  const d = {
+    team,
+    kind: 'drone',
+    cx,
+    cy,
+    heading,
+    mode: 'walk', // 'walk' | 'dig' (see above)
+    falling: false,
+    vy: 0,
+    fallAccum: 0,
+    moveAccum: 0, // fractional travel not yet stepped
+    factor: 1, // speed factor from the dirt being dug (dig mode)
+    turn: 0, // current wander turn rate, rad/s
+    groundDir: Math.PI / 2, // direction of the dirt it last clung to (legs side)
+    walked: 0, // px moved, drives the leg flicker
+    hp: 1,
+    dead: false,
+    deadTime: 0, // seconds since death (main.js removes it after cfg.corpseTime)
+    x: 0,
+    y: 0,
+    w: cfg.width,
+    h: cfg.height,
+  };
+  syncDroneRect(d, cfg);
+  return d;
+}
+
+/**
+ * n new drones at a queen's base: on the floor under her, spread up to
+ * cfg.spawnSpread px either side of her center, each heading left or right.
+ * rand: () => 0..1.
+ */
+export function spawnDrones(queen, n, cfg, rand = Math.random) {
+  const cx = queen.x + queen.w / 2;
+  const cy = queen.y + queen.h - cfg.bodyRadius - 1; // just above the floor row
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const x = cx + (rand() * 2 - 1) * cfg.spawnSpread;
+    out.push(createDrone(queen.team, x, cy, rand() < 0.5 ? 0 : Math.PI, cfg));
+  }
+  return out;
+}
+
+function diskHasSolid(world, cx, cy, r) {
+  return nearestSolid(world, cx, cy, r) !== null;
+}
+
+/** One 1px walking step (never digs). Returns true if the drone moved. */
+function walkStep(world, d, cfg) {
+  const hug = nearestSolid(world, d.cx, d.cy, hugRadius(cfg));
+  if (!hug) {
+    // Supported but not against anything (middle of a tunnel): crawl to the nearest wall.
+    const t = nearestSolid(world, d.cx, d.cy, supportRadius(cfg));
+    if (!t) return false;
+    const a = Math.atan2(t.y - d.cy, t.x - d.cx);
+    const nx = d.cx + Math.cos(a);
+    const ny = d.cy + Math.sin(a);
+    if (!droneInBounds(world, nx, ny, cfg) || diskHasSolid(world, nx, ny, cfg.bodyRadius)) return false;
+    d.cx = nx;
+    d.cy = ny;
+    d.groundDir = a;
+    return true;
+  }
+  d.groundDir = Math.atan2(hug.y - d.cy, hug.x - d.cx);
+  // Turn as little as possible: try the heading, then +-step, +-2 step, ... to +-180.
+  const step = cfg.walkSearchStep * DEG;
+  const n = Math.ceil(Math.PI / step);
+  for (let k = 0; k <= n; k++) {
+    for (const s of k === 0 ? [0] : [1, -1]) {
+      const a = d.heading + s * k * step;
+      const nx = d.cx + Math.cos(a);
+      const ny = d.cy + Math.sin(a);
+      if (!droneInBounds(world, nx, ny, cfg)) continue;
+      if (diskHasSolid(world, nx, ny, cfg.bodyRadius)) continue; // would push into dirt
+      if (!nearestSolid(world, nx, ny, hugRadius(cfg))) continue; // would let go
+      d.cx = nx;
+      d.cy = ny;
+      d.heading = wrapAngle(a);
+      return true;
+    }
+  }
+  d.heading = wrapAngle(d.heading + Math.PI); // boxed in: turn around
+  return false;
+}
+
+/** One 1px tunneling step. Returns true if the drone moved. */
+function digStep(world, d, cfg, rand) {
+  let hx = Math.cos(d.heading);
+  let hy = Math.sin(d.heading);
+  const nx = d.cx + hx;
+  const ny = d.cy + hy;
+  // Screen edges: bounce off (flip the component heading out of the map).
+  const m = cfg.edgeMargin;
+  if (nx < m || nx > world.width - m || ny < m || ny > world.height - m) {
+    if (nx < m || nx > world.width - m) hx = -hx;
+    if (ny < m || ny > world.height - m) hy = -hy;
+    d.heading = Math.atan2(hy, hx);
+    return false;
+  }
+  // The pixels this step newly covers: inside the next circle, outside the current one.
+  const r = cfg.digRadius;
+  const r2 = r * r;
+  const x0 = Math.max(0, Math.floor(nx - r));
+  const y0 = Math.max(0, Math.floor(ny - r));
+  const x1 = Math.min(world.width - 1, Math.ceil(nx + r));
+  const y1 = Math.min(world.height - 1, Math.ceil(ny + r));
+  let diggable = 0;
+  let minRes = 1;
+  let blocked = 0; // undiggable pixels in the way, and their summed offsets from the drone
+  let bx = 0;
+  let by = 0;
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      if ((x - nx) ** 2 + (y - ny) ** 2 >= r2) continue;
+      if ((x - d.cx) ** 2 + (y - d.cy) ** 2 < r2) continue;
+      if (!world.isSolid(x, y)) continue;
+      const res = world.resistanceAt(x, y);
+      if (!(res > 0)) {
+        blocked++;
+        bx += x - d.cx;
+        by += y - d.cy;
+        continue;
+      }
+      diggable++;
+      if (res < minRes) minRes = res;
+    }
+  }
+  if (blocked) {
+    // Bedrock (undiggable) ahead: turn around, mirrored off its surface (a head-on
+    // hit reverses; a glancing one bounces off along it), give or take reverseJitter.
+    const len = Math.hypot(bx, by) || 1;
+    const ux = bx / len;
+    const uy = by / len;
+    const dot = hx * ux + hy * uy;
+    const a = Math.atan2(hy - 2 * dot * uy, hx - 2 * dot * ux);
+    d.heading = wrapAngle(a + (rand() * 2 - 1) * cfg.reverseJitter * DEG);
+    return false;
+  }
+  if (!diggable) {
+    d.mode = 'walk'; // broke out into open space: walk from here
+    return walkStep(world, d, cfg);
+  }
+  d.factor = minRes;
+  d.cx = nx;
+  d.cy = ny;
+  world.dig(nx, ny, r);
+  return true;
+}
+
+/** Direction from the drone to the middle of the map. */
+const towardMiddle = (world, d) => Math.atan2(world.height / 2 - d.cy, world.width / 2 - d.cx);
+
+/** On the open surface: nothing solid straight above the drone, all the way up. */
+function onOpenSurface(world, d) {
+  const x = Math.round(d.cx);
+  for (let y = Math.round(d.cy) - 1; y >= 0; y--) if (world.isSolid(x, y)) return false;
+  return true;
+}
+
+function fallDrone(world, d, dt, cfg) {
+  const landed = () => d.cy >= world.height - cfg.edgeMargin || nearestSolid(world, d.cx, d.cy, hugRadius(cfg));
+  d.vy = Math.min(cfg.maxFallSpeed, d.vy + cfg.gravity * dt);
+  d.fallAccum += d.vy * dt;
+  while (d.fallAccum >= 1 && !landed()) {
+    d.cy = Math.min(world.height - cfg.edgeMargin, d.cy + 1);
+    d.fallAccum -= 1;
+  }
+  if (landed()) {
+    d.falling = false;
+    d.vy = 0;
+    d.fallAccum = 0;
+  }
+}
+
+/**
+ * Advance one drone by dt seconds (see the state notes above). rand: () => 0..1.
+ * world: { width, height, isSolid, resistanceAt, dig }.
+ */
+export function updateDrone(world, d, dt, cfg, rand = Math.random) {
+  if (d.dead) return;
+  if (!d.falling && !nearestSolid(world, d.cx, d.cy, supportRadius(cfg))) {
+    d.falling = true;
+    d.mode = 'walk';
+    d.moveAccum = 0;
+  }
+  if (d.falling) {
+    fallDrone(world, d, dt, cfg);
+    syncDroneRect(d, cfg);
+    return;
+  }
+
+  if (d.mode === 'walk') {
+    // Embedded in dirt (spawned inside it, or the map changed): dig out.
+    if (diskHasSolid(world, d.cx, d.cy, cfg.bodyRadius)) d.mode = 'dig';
+    else if (rand() < cfg.surfaceDigChance * dt) {
+      // Start a new tunnel, give or take digSpread: straight down from the open
+      // surface, toward the middle of the map from underground. If that way holds
+      // no dirt, the first dig step finds none and it goes back to walking.
+      const base = onOpenSurface(world, d) ? Math.PI / 2 : towardMiddle(world, d);
+      d.heading = wrapAngle(base + (rand() * 2 - 1) * cfg.digSpread * DEG);
+      d.mode = 'dig';
+      d.factor = 1;
+    }
+  }
+  if (d.mode === 'dig') {
+    if (rand() < dt / cfg.turnInterval) d.turn = (rand() * 2 - 1) * cfg.turnRate * DEG;
+    d.heading += d.turn * dt;
+    // Gentle pull toward the middle of the map.
+    const diff = wrapAngle(towardMiddle(world, d) - d.heading);
+    const pull = cfg.centerPull * DEG * dt;
+    d.heading = wrapAngle(d.heading + Math.max(-pull, Math.min(pull, diff)));
+  }
+
+  d.moveAccum += cfg.speed * (d.mode === 'dig' ? d.factor : 1) * dt;
+  while (d.moveAccum >= 1) {
+    d.moveAccum -= 1;
+    const moved = d.mode === 'dig' ? digStep(world, d, cfg, rand) : walkStep(world, d, cfg);
+    if (moved) d.walked++;
+  }
+  syncDroneRect(d, cfg);
+}
+
+/**
+ * Placeholder drone art (the real 2-frame sprite is slice 8): a team-colored
+ * rect with three 1px legs on the side of the dirt it clings to, shifting by a
+ * pixel every cfg.legFrameDistance px walked.
+ */
+export function drawDrone(ctx, d, color, cfg) {
+  ctx.fillStyle = color;
+  ctx.fillRect(d.x, d.y, d.w, d.h);
+  const shift = Math.floor(d.walked / cfg.legFrameDistance) % 2;
+  const gx = Math.cos(d.groundDir);
+  const gy = Math.sin(d.groundDir);
+  if (d.w >= d.h) {
+    const ly = gy < 0 ? d.y - 1 : d.y + d.h;
+    for (let i = 0; i < 3; i++) ctx.fillRect(d.x + 1 + shift + i * 4, ly, 1, 1);
+  } else {
+    const lx = gx < 0 ? d.x - 1 : d.x + d.w;
+    for (let i = 0; i < 3; i++) ctx.fillRect(lx, d.y + 1 + shift + i * 4, 1, 1);
+  }
 }

@@ -17,7 +17,7 @@
   ],
 
   "turns": {
-    "fixedAP": 2,
+    "dronesPerAP": 5,
     "announceDuration": 2,
     "settleDelay": 0.5,
     "gameOverDelay": 0.75
@@ -73,6 +73,31 @@
     "dots": { "radius": 3, "spacing": 4, "gap": 4 }
   },
 
+  "drone": {
+    "width": 12,
+    "height": 4,
+    "speed": 5,
+    "digRadius": 8,
+    "bodyRadius": 2,
+    "touchMargin": 1.5,
+    "edgeMargin": 6,
+    "turnRate": 30,
+    "turnInterval": 1.5,
+    "centerPull": 4,
+    "surfaceDigChance": 0.15,
+    "digSpread": 70,
+    "reverseJitter": 30,
+    "walkSearchStep": 15,
+    "gravity": 600,
+    "maxFallSpeed": 400,
+    "startCount": 5,
+    "spawnPerTurn": 5,
+    "cap": 50,
+    "spawnSpread": 24,
+    "corpseTime": 0.6,
+    "legFrameDistance": 2
+  },
+
   "shot": {
     "apCost": 1,
     "startAngle": 45,
@@ -123,8 +148,7 @@
     "radiusStep": 5,
     "color": "#ffffff",
     "circleOpacity": 0.35,
-    "font": "10px monospace",
-    "respawnDelay": 1.5
+    "font": "10px monospace"
   },
 
   "terrainKey": [

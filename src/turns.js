@@ -1,5 +1,7 @@
 // Turns (slice 5): two players, the coin flip, per-turn AP, and when a turn ends.
 // Slice 6: win rules, the game-over phase and restart.
+// Slice 7: the queen's start-of-turn spawn (drones, or a new soldier) and AP from
+// the drone count.
 //
 // Pure state with no DOM, so node can test it. main.js owns the loop: it calls
 // updateTurn() every frame and startTurn() whenever updateTurn() says a new turn
@@ -11,7 +13,8 @@
 //   'ending'   - the turn is over (End Turn key, 0 AP with no walk left, or the
 //                active soldier died). Input is locked; the turn hands over once
 //                the world has stayed settled (no shot, no explosion, no soldier
-//                falling) for cfg.settleDelay seconds.
+//                falling) for cfg.settleDelay seconds. Drones never hold it
+//                up: they are always moving (see worldSettled).
 //   'over'     - a queen died (see gameResult). Nobody can act and the turn never
 //                hands over. turn.result says who won. The win screen waits until
 //                the world has stayed settled (explosion finished, every unit
@@ -80,7 +83,6 @@ export function resetPlayer(player, shotCfg) {
   player.ap = 0;
   player.walkBudget.forfeit();
   player.aim = createAim(shotCfg);
-  player.respawnTimer = 0;
 }
 
 /** Index of the player who goes first: 0 or 1. rand: () => 0..1. */
@@ -97,7 +99,6 @@ export function createPlayer(team, controls, soldierCfg, shotCfg) {
     controls,
     soldier: null,
     aim: createAim(shotCfg),
-    respawnTimer: 0, // debug auto-respawn (slice 7 replaces it with the queen rules)
   };
 }
 
@@ -115,17 +116,33 @@ export function createTurnState(first, cfg) {
   };
 }
 
-/** AP granted at the start of a turn. Slice 7: floor(drones / 5). */
-export function turnAP(player, cfg) {
-  return cfg.fixedAP;
+/** AP granted at the start of a turn: floor(living drones / cfg.dronesPerAP). */
+export function turnAP(droneCount, cfg) {
+  return Math.floor(droneCount / cfg.dronesPerAP);
 }
 
 /**
- * Start-of-turn step for `player`. Slice 7 adds "queen spawns drones" here, before
- * the AP is set. Unused AP never carries over: AP is set, not added.
+ * What the queen spawns at the start of her side's turn, before the AP is set.
+ * This is the one place the soldier-death rule lives:
+ *   - soldier dead: she spawns a new soldier (on the surface above her) INSTEAD
+ *     of drones this turn. It doesn't matter whose turn the soldier died in.
+ *   - otherwise: droneCfg.spawnPerTurn drones, capped so the side's living
+ *     drones never exceed droneCfg.cap.
+ * So the turn after a soldier dies has no drone spawn, and normal spawning
+ * resumes the turn after that. Returns { soldier: bool, drones: n }.
  */
-export function startTurn(player, cfg) {
-  player.ap = turnAP(player, cfg);
+export function turnStartSpawn(player, liveDrones, droneCfg) {
+  if (!player.soldier || player.soldier.dead) return { soldier: true, drones: 0 };
+  return { soldier: false, drones: Math.max(0, Math.min(droneCfg.spawnPerTurn, droneCfg.cap - liveDrones)) };
+}
+
+/**
+ * Start-of-turn step for `player`, after the queen's spawn (turnStartSpawn):
+ * AP from the side's living drones. Unused AP never carries over: AP is set, not
+ * added.
+ */
+export function startTurn(player, cfg, droneCount) {
+  player.ap = turnAP(droneCount, cfg);
   player.walkBudget.forfeit();
   player.aim.mode = 'walk';
   cancelCharge(player.aim);
@@ -156,13 +173,14 @@ export function turnOver(turn, player) {
 }
 
 /**
- * No shot flying, no explosion playing, and no living unit falling. `units` is
- * every unit under gravity: soldiers and queens (a falling queen blocks the
- * handover just like a falling soldier).
+ * No shot flying, no explosion playing, and no living soldier or queen falling
+ * (a falling queen blocks the handover just like a falling soldier). Drones are
+ * skipped even if passed in: they wander forever, so waiting on them would stall
+ * the handover.
  */
 export function worldSettled(world, fx, units) {
   if (fx.shot || fx.explosion) return false;
-  return units.every((u) => !u || u.dead || isSupported(world, u));
+  return units.every((u) => !u || u.dead || u.kind === 'drone' || isSupported(world, u));
 }
 
 /**

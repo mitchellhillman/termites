@@ -3,6 +3,7 @@
 // Slice 4: mode and angle in the readout, and the PWR bar.
 // Slice 5: per-player AP corners, the turn indicator and the coin flip announcement.
 // Slice 6: the win screen.
+// Slice 7: each side's drone count next to its AP.
 
 export function drawGrid(ctx, balance) {
   const { width, height } = balance.canvas;
@@ -42,12 +43,13 @@ function label(ctx, hud, text, x, y, align, color, font = hud.font, h = hud.line
 }
 
 /**
- * Temporary readout (the real HUD is slice 8). Each player's AP sits in their own
+ * Temporary readout (the real HUD is slice 8). Each player's AP and living drone
+ * count (droneCounts[i]) sit in their own
  * bottom corner (P1 left, P2 right); the active player's is in full color and
  * underlined, the other dimmed. Above the active player's corner: a status line
  * and a controls hint for that player only. (Debug text is top-left.)
  */
-export function drawPlayerReadouts(ctx, balance, players, turn) {
+export function drawPlayerReadouts(ctx, balance, players, turn, droneCounts = []) {
   const { width, height } = balance.canvas;
   const hud = balance.hud;
   const lh = hud.lineHeight;
@@ -59,7 +61,7 @@ export function drawPlayerReadouts(ctx, balance, players, turn) {
     const x = right ? width - hud.margin : hud.margin;
     const color = balance.teams[p.team].color;
     ctx.globalAlpha = active ? 1 : hud.inactiveOpacity;
-    const w = label(ctx, hud, `${balance.teams[p.team].name}  AP ${p.ap}`, x, rowY(0), right ? 'right' : 'left', color);
+    const w = label(ctx, hud, `${balance.teams[p.team].name}  AP ${p.ap}  drones ${droneCounts[i] ?? 0}`, x, rowY(0), right ? 'right' : 'left', color);
     if (active) {
       ctx.fillStyle = color;
       ctx.fillRect(right ? x - w : x, rowY(0) + lh / 2 - 2, w, 1);
