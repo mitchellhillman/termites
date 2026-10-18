@@ -1,7 +1,51 @@
-// Input. Keyboard is filled in by slice 3 (P1 keys) and slice 5 (P2 keys).
+// Input. Keyboard state (slice 3), mapped to per-player actions through the
+// bindings in balance.controls (P1 now, P2 in slice 5).
 // Slice 2: the debug click-to-explode harness (gated by balance.debug.clickToExplode).
 
 import { explode } from './terrain.js';
+
+/**
+ * Keyboard state by KeyboardEvent.code (layout-independent, e.g. "KeyA").
+ * isDown(code): held right now. wasPressed(code): went down since the last
+ * endFrame() (key auto-repeat ignored). Call endFrame() once per frame after
+ * reading input. `bound` codes have their browser default suppressed (arrow keys
+ * scrolling, "/" quick find).
+ */
+export function setupKeyboard(bound = []) {
+  const down = new Set();
+  const pressed = new Set();
+  const suppress = new Set(bound);
+
+  window.addEventListener('keydown', (e) => {
+    if (suppress.has(e.code)) e.preventDefault();
+    if (!e.repeat) pressed.add(e.code);
+    down.add(e.code);
+  });
+  window.addEventListener('keyup', (e) => {
+    down.delete(e.code);
+  });
+  // Keys released while the tab is unfocused never send keyup.
+  window.addEventListener('blur', () => down.clear());
+
+  return {
+    isDown: (code) => down.has(code),
+    wasPressed: (code) => pressed.has(code),
+    endFrame: () => pressed.clear(),
+  };
+}
+
+/**
+ * One player's actions ("left", "right", "faceUp", "faceDown", "mode", "fire",
+ * "endTurn") read through their bindings, e.g. balance.controls.p1.
+ */
+export function playerControls(keyboard, bindings) {
+  return {
+    held: (action) => keyboard.isDown(bindings[action]),
+    pressed: (action) => keyboard.wasPressed(bindings[action]),
+    /** -1, 0 or 1 from the left/right keys (both held cancel out). */
+    walkDir: () => (keyboard.isDown(bindings.right) ? 1 : 0) - (keyboard.isDown(bindings.left) ? 1 : 0),
+  };
+}
 
 // Mouse position in map pixels. The canvas is CSS-scaled by a whole number, so
 // divide out the displayed size rather than assuming 1:1.

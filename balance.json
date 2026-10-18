@@ -7,6 +7,33 @@
     "background": "#1a0f08"
   },
 
+  "timing": {
+    "maxFrameDt": 0.05
+  },
+
+  "teams": [
+    { "name": "Player 1", "color": "#ffffff", "spawnX": 70 },
+    { "name": "Player 2", "color": "#e8392b", "spawnX": 570 }
+  ],
+
+  "controls": {
+    "p1": { "left": "KeyA", "right": "KeyD", "faceUp": "KeyW", "faceDown": "KeyS", "mode": "KeyQ", "fire": "KeyE", "endTurn": "KeyR" },
+    "p2": { "left": "ArrowLeft", "right": "ArrowRight", "faceUp": "ArrowUp", "faceDown": "ArrowDown", "mode": "Slash", "fire": "Period", "endTurn": "Comma" }
+  },
+
+  "soldier": {
+    "width": 12,
+    "height": 24,
+    "walkSpeed": 40,
+    "walkPxPerAP": 40,
+    "walkAPCost": 1,
+    "stepUpPx": 3,
+    "snapDownPx": 4,
+    "gravity": 600,
+    "maxFallSpeed": 400,
+    "eyeColor": "#1a0f08"
+  },
+
   "grid": {
     "spacing": 40,
     "color": "#ffffff",
@@ -24,7 +51,9 @@
     "radiusStep": 5,
     "color": "#ffffff",
     "circleOpacity": 0.35,
-    "font": "10px monospace"
+    "font": "10px monospace",
+    "soldierStartAP": 5,
+    "refillAPKey": "KeyT"
   },
 
   "terrainKey": [

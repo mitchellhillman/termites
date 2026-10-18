@@ -106,6 +106,11 @@ function writePixel(i) {
 
 const inBounds = (x, y) => x >= 0 && y >= 0 && x < width && y < height;
 
+/** Map size in pixels. */
+export function getSize() {
+  return { width, height };
+}
+
 /** Terrain-type ID at (x, y), or -1 outside the map. */
 export function getType(x, y) {
   x |= 0;
