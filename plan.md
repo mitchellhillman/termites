@@ -178,4 +178,4 @@ Each slice ends with something you can run and see in the browser.
 - [x] **6. Queens and win rules:** queens in their chambers, 3 health and health dots, blast damage to all units, friendly fire, and win, draw, and restart.
 - [x] **7. Drones:** spawning, the drone cap, wandering, tunneling with resistance, wall-clinging, and real-time movement. AP comes from drone count; soldier death skips a spawn and respawns the soldier.
 - [x] **8. Polish:** PNG sprite sheets with tinting, walk animations, death skulls, explosion particles, the full HUD, and the title screen.
-- [ ] **9. Ship:** GitHub Pages setup and a README with how to run and play.
+- [x] **9. Ship:** GitHub Pages setup and a README with how to run and play.
