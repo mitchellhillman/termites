@@ -1,89 +1,95 @@
 # Termites — Game Plan
 
-A simple 2D, turn-based, two-player artillery game played in a web browser on an HTML canvas. 
+A simple 2D, turn-based, two-player artillery game played in a web browser on an HTML canvas.
 
 ---
 
 ## Overview
 
-- 2D game screen
-- 640x480 resolution
-- 2 players
-- Turn based; a random coin flip picks who goes first, announced on screen
-- Canvas web browser game
-- Both players share the same keyboard
-- Each player has a color: **White / Red**
-- Environment has background of dark brown.
-- Foreground and walkingsurface is medium brown representing dirt.
-- The game has a grid overlay so players can easily judge distances
+- 2D side-view game on a single 640x480 screen with no camera zoom or pan
+- 2 players share one keyboard and take turns
+- A random coin flip picks who goes first and is announced on screen
+- Player colors: **Player 1 is White, Player 2 is Red**
+- Open space (sky and cleared tunnels) is dark brown; dirt is shades of medium brown
+- A faint grid overlay every 40px is always on, so players can judge distances
+- There is no sound in v1
 
-## Action Points (AP)
+## Game Flow
 
-- Each team has a number of action points (AP)
-- AP is determined by the number of drones
-- **5 drones = 1 action point**
-- Start with **5 drones**. The queen spawns 5 at the start of your first turn, giving 10 drones = 2 AP, so on your first turn you can shoot once and walk once
-- AP tokens are shown in the game HUD
-- drones are spawned from a queen, 5 each turn.
+1. A title screen shows the game name and both players' controls; any key starts the game.
+2. Players alternate turns until a queen dies.
+3. A win screen shows "Player X wins" (or "Draw"); a key restarts on the same map.
+
+## Turns and Action Points (AP)
+
+- At the start of a player's turn:
+  1. Their queen spawns 5 drones, unless their soldier died during the previous turn.
+  2. Their AP is set to floor(drones / 5).
+- **5 drones = 1 AP**
+- Each side starts with 5 drones. The first spawn brings that to 10 drones, so each player has 2 AP on their first turn (enough to walk once and shoot once).
+- Each side has a drone cap set in balance.json (default 50 = 10 AP max).
+- Unused AP does not carry over.
+- The turn ends automatically at 0 AP, or early when the player presses their End Turn key.
+- Drones move continuously in real time during both players' turns.
+
+## Win Conditions
+
+- The game ends when a queen dies.
+- Killing your own queen means the other player wins.
+- If both queens die at once, the game is a draw.
 
 ## Units
 
-Each side has 3 unit types:
+Each side has a **Queen**, one **Soldier**, and many **Drones**. Every unit is a single-color pixel sprite in its team's color.
 
-1. **Soldier**
-2. **Drone**
-3. **Queen**
+| Unit | Size | Hits to kill |
+|---|---|---|
+| Drone | 12x4 px (horizontal) | 1 |
+| Soldier | 12x24 px (vertical) | 1 |
+| Queen | 64x64 px | 3 |
 
-General:
-- Units have a pixel/block look
-- Each unit is a single color (the player's color)
-- When any unit dies, a tiny pixel skull sprite appears, then the skull and the unit sprite both disappear
-- drones: 4X12 pixels horizontal
-- soliders: 12x24 pixels vertical
-- queen: 64x64 pixel
+When any unit dies, a tiny pixel skull appears over it for ~1s (set in balance.json), then the skull and the unit vanish together.
 
 ### Queen
-- Does not move
-- Spawns 5 drones per turn
-- Killing the Queen ends the game
-  - killing your own queen means the other player wins; if both queens die at once, the game is a draw
-- 3 hits to kill
-- health shown as 3 dots above the queen's head in the team color: filled = health remaining, hollow outline = hit taken
+
+- Starts in a pre-dug chamber underground, near its edge of the map
+- Never moves on its own, but falls if the dirt under it is removed
+- Spawns 5 drones per turn at its base
+- Shows its health as 3 dots above its head in the team color: filled dots are health remaining, hollow outlines are hits taken
 
 ### Soldier
-- Can take actions that spend action points:
-  1. Move (1 AP)
-  2. Shoot (1 AP)
-- Moves along the surface of the ground
-- Moves **40px per AP**
-  - the grid matches the distance of the solider's movement
-- 1 hit to kill
-- Killing a Soldier means that side's Queen stops spawning drones for one turn and spawns a new Soldier the next turn
+
+- Each side always has exactly one soldier, which starts on the surface above its queen
+- Spends AP on two actions:
+  - **Walk (1 AP):** starting to walk spends 1 AP and unlocks 40px of free movement (one grid cell). Leftover distance is lost when the player switches modes or ends the turn.
+  - **Shoot (1 AP):** see Shooting
+- Walks along whatever dirt surface it stands on and climbs anything, including vertical walls
+- When a soldier dies, its queen skips its next drone spawn, and a new soldier appears on the surface above the queen on the turn after that
 
 ### Drone
-- Represented by a simple single-color pixel sprite
-- Legs animate to suggest walking
-- Always moving
-- Move randomly, either along the surface or digging tunnels
-- Move 5px per second, continuously (set in balance.json)
-- Can overlap each other
-- The player cannot control drones directly
-- 1 hit to kill
-- Drone population determines AP (see above)
+
+- The player cannot control drones
+- Drones are always moving at 5px per second (set in balance.json)
+- Their legs animate to suggest walking
+- Drones can overlap each other
+- Drones wander: each keeps a heading and turns slightly at random, which makes curvy tunnels
+- Drones turn around at undiggable dirt and at screen edges
+- Drone population determines AP
 
 ## Digging
 
-- Drones "dig" by moving through the dirt in any direction
-- their feet must always touch ground. 
-- A radius around each drone removes dirt as it walks
-- Drones walk randomly in any direction through the earth
-- They also walk along the surface of the dirt
-- When on the surface, no dirt is removed
-- Shots from Soldiers also "dig" (see Shooting)
+- Drones dig by moving through dirt in any direction. A radius slightly larger than the drone's body (~8px, set in balance.json) clears dirt as it moves.
+- Drone tunnels are drone-sized and too narrow for soldiers.
+- Dig speed is scaled by the resistance of the dirt the drone is in.
+- A drone's feet always touch dirt. Drones cling to tunnel walls, and fall when nothing is touching them.
+- Drones also walk along the surface, where they clear no dirt. Surface drones have a random chance to turn downward and start a new tunnel.
+- Over time, drones tunnel through the dirt toward the middle of the map.
+- Soldier shots also dig (see Shooting).
 
 ## Shooting
 
 ### Controls
+
 | Action | Player 1 | Player 2 |
 |---|---|---|
 | Walk (walk mode) / move aim cursor (shoot mode) | A / D | ← / → |
@@ -92,122 +98,70 @@ General:
 | Fire (press to start power bar, press again to shoot) | E | . |
 | End turn | R | , |
 
-### Power: "Quicktime" gradient bar
-- A gradient bar with a "quicktime" selector picks the shot's power
-- A bar appears with a white marker that moves up and down along a gradient (toward red); the player times the press to set power.
-- Shown in the HUD as a vertical **PWR** bar near the active soldier
+### Aiming
 
-### Ballistics and explosion radius
-- Power also affects the ballistic arc of the Soldier's shot
-- **The angle of the drop sets the explosion radius:**
-  - A high lob makes a big radius ("the more arched the shot, the more Boom!")
-  - A straight shot makes a tiny radius. It's just as lethal to the target, but the blast is smaller
-- The radius clears any dirt it lands on
-- Any unit within the shot radius takes 1 hit: drones and soldiers die, queens lose 1 of 3 HP
-- the min radius of a shot is 5px
-- the maximum radius is 100px
+- A tiny cursor sprite moves along an arc around the soldier, from 0° (horizontal) to 90° (straight up), on the side the soldier faces.
 
-### Damage
-- Soldier: 1 hit to kill
-- Drone: 1 hit to kill
-- Queen: 3 hits to kill
+### Power: "Quicktime" bar
+
+- The first Fire press shows a vertical **PWR** gradient bar next to the active soldier. A white marker sweeps up and down along it, toward red.
+- The second Fire press locks the power and fires.
+- Power sets the launch speed and therefore the arc.
+
+### Ballistics
+
+- Shots are affected by gravity only, with no wind (gravity set in balance.json).
+- Shots explode on contact with dirt or any unit.
+- Shots can arc above the top edge and fall back down. Shots that leave the left or right edge are lost.
+
+### Explosions
+
+- **The impact angle sets the blast radius:** it scales linearly from 5px for a flat impact (0°) to 100px for a straight-down impact (90°). The more arched the shot, the bigger the boom.
+- A straight shot is just as lethal to what it hits, but its blast is smaller.
+- Every unit inside the radius takes 1 hit, including your own (friendly fire is on). Drones and soldiers die, and queens lose 1 of 3 health.
+- The blast clears dirt, reduced by resistance: a dirt pixel is cleared only if its distance from the impact is less than radius × that dirt's resistance factor.
+- The explosion appears as a blocky pixel ring that grows to the blast radius and fades, plus a few dirt-colored particles.
 
 ## World / Terrain
 
-- Side-view scene: sky (or cleared tunnel) on top, dirt below, with an uneven surface (hills and valleys)
-- Each queen starts in a pre-dug chamber underground near opposite edges of the map; drones spawn in the chamber. Each soldier starts on the surface above its queen
-- A thin undiggable bedrock strip runs along the bottom of the map
-- **Random dirt layers** that resist digging and explosions by different amounts
-- Gravity: when dirt under a soldier or queen is removed, it falls until it lands (no fall damage). Drones cling to tunnel walls while touching dirt, and fall when nothing is touching them
-- Over time, drones tunnel through the dirt toward the middle (sketch: "Drones break thru dirt")
+- The map is a hand-editable `map.png` (640x480). The first map is generated, then stays fixed.
+- A color key in balance.json maps each map color to its terrain type:
+
+| Terrain | Resistance factor |
+|---|---|
+| Open (sky / tunnel) | empty |
+| Soft dirt | 1 |
+| Medium dirt | 0.75 |
+| Hard dirt | 0.5 |
+| Bedrock | undiggable and unblastable |
+
+- The generated map has an uneven surface with hills and valleys, and wavy horizontal dirt bands (soft on top, hard at the bottom). Each dirt type has its own shade of brown.
+- Each queen has a pre-dug chamber near its edge of the map.
+- A thin bedrock strip runs along the bottom of the map.
+- Gravity: when the dirt under a soldier or queen is removed, it falls until it lands. There is no fall damage.
 
 ## Art / Visual Style
 
-- Pixel/block look
-- Single-color sprites per unit, in the player's color (Red / White)
-- Sketches: drone (small, ant-like, side view), soldier (upright with a gun), queen (large, blocky, wide body)
-- Tiny pixel skull on death 
+- Pixel/block style
+- Sprites are PNG sprite sheets drawn white on a transparent background, and tinted to the team color at runtime
+- Frames: drone has a 2-frame leg walk; soldier has an idle frame and a 2-frame walk; queen, skull, and aim cursor are 1 frame each
+- Reference sketches: drone (small, ant-like, side view), soldier (upright with a gun), queen (large, blocky, wide body)
 
 ## HUD
 
 - Current turn indicator, e.g. "Player 1 turn" (top right)
-- AP tokens shown as circles, e.g. `AP ○○○` (bottom)
-- PWR gradient bar shown while aiming
-- Grid overlay
+- Each player's AP tokens, shown as circles like `AP ○○○`, in their own bottom corner (P1 left, P2 right). The active player's AP is highlighted.
+- Drone count for each side
+- The active soldier's current mode (walk or shoot)
+- Remaining walk budget
+- A controls hint for the active player
+- The PWR bar while aiming
 
----
+## Tech
 
-## Tech notes
-
-- no sound in v1
-
-- make all fixed pixel values set by a imported JSON with key value pairs, called balance.json so i can edit it by hand. 
-
-## Open Questions
-
-3. **Shared keys:** both players use the same keyboard. Do Space and E apply to both players? Since turns alternate, shared keys may be fine. Does P2 need different keys? 
-  - no. each player has its own toggle and fire button
-  - each player has its own direction keyts left and right sides of keyboard
-7. **Dirt layer resistance:** how many layer types are there, and how does resistance affect drone digging speed and blast radius?
-  - 3 layers of dirt
-  - each has own shade of brown 
-  - each resist digging by factor of 1, .75, .5
-9. **Win condition:** the game ends when a Queen dies. Is there anything else, such as a side running out of drones or AP?
-  - only win condition is queen dying. 
-
-## Next Steps
-
-- [x] Review the transcription and resolve the open questions
-- [x] Choose a tech approach (plain JS + canvas, no build step?)
-  - plain JS canvas. no build step. no frameworks
-  - run locally with a static server (e.g. `python3 -m http.server`), and load balance.json with fetch()
-  - hosted on GitHub Pages
-  - split into a few ES modules: main.js, terrain.js, units.js, input.js, hud.js, plus balance.json
-- [x] Prototype destructible terrain (pixel/bitmap dirt mask)
-  - the map is a single 640x480 screen with no camera zoom or pan
-  - hand-made map: `map.png` (640x480). I generate the first one, then it stays fixed and you can edit it by hand
-  - a color key in balance.json maps each map color to whether it can be dug and how fast:
-    - sky / open tunnel: empty
-    - soft dirt: resistance 1
-    - medium dirt: resistance .75
-    - hard dirt: resistance .5
-    - undiggable (e.g. bedrock): cannot be dug or blasted
-  - the first generated map uses wavy horizontal bands (soft on top, hard on the bottom), random hills, and flat spots at each edge for the queens
-  - explosions use resistance per pixel: a pixel is cleared only if its distance from the impact is less than radius × that layer's factor
-  - at runtime the map is loaded into an offscreen canvas or typed array, and pixels are cleared in place
-- [x] Turn system and AP
-  - the turn ends automatically at 0 AP, or early when the player presses their End Turn key
-  - at the start of a player's turn, their queen spawns 5 drones (unless their soldier died last turn), then AP = floor(drones / 5)
-  - unused AP does not carry over
-  - drones move continuously in real time during both players' turns (speed set in balance.json)
-- [x] Soldier movement and shooting (arc, power bar, radius)
-  - walking is free movement metered by AP: starting to walk spends 1 AP and unlocks 40px of travel; leftover distance is lost when you switch modes or end the turn
-  - soldiers climb anything: they always follow the surface, including vertical walls
-  - aim: a tiny cursor sprite moves in an arc around the soldier (left/right keys), from 0° (horizontal) to 90° (straight up) on the side the soldier faces; flip facing with W/S or ↑/↓
-  - power: first fire press shows the PWR bar with the marker sweeping; second press locks the power and fires
-  - projectile: gravity only, no wind (gravity set in balance.json)
-  - shots explode on contact with dirt or any unit
-  - friendly fire is on: blasts hurt your own units too
-  - blast radius is linear in impact angle: flat (0°) = 5px, straight down (90°) = 100px
-  - shots can arc above the top edge and fall back; shots past the left or right edge are lost
-- [x] Drone AI (random walk, digging)
-  - wander with a heading: each drone keeps a direction and turns slightly at random, which makes curvy tunnels
-  - drones on the surface have a random chance to turn down and start a new tunnel
-  - dig radius is slightly larger than the drone body (~8px, set in balance.json), so tunnels are drone-sized and too narrow for soldiers
-  - dig speed is scaled by the resistance of the dirt the drone is in
-  - drones turn around at undiggable pixels and screen edges
-- [x] Queen spawning and death and win rules
-  - drones spawn at the queen's base
-  - drone cap per side is set in balance.json (e.g. 50 = 10 AP max)
-  - each side always has exactly one soldier; when it dies, it respawns next to its queen on the turn after the spawn pause
-  - when a queen dies, show "Player X wins", and a key restarts on the same map
-- [x] HUD, grid overlay (camera zoom dropped: single-screen map)
-  - grid: faint lines every 40px, always on
-  - each player's AP is in their own bottom corner (P1 left, P2 right); the active player's is highlighted
-  - HUD also shows: drone count per side, current mode (walk/shoot), walk budget remaining, and a controls hint for the active player
-  - title screen: game name, controls for both players, "press any key"
-- [x] Pixel sprites and death skull
-  - PNG sprite sheets, drawn white on a transparent background and tinted to the team color at runtime
-  - minimal frames: drone 2-frame leg walk; soldier idle + 2-frame walk; queen static; skull 1 frame; aim cursor 1 frame
-  - explosion: an expanding blocky pixel ring that grows to the blast radius and fades, plus a few dirt-colored particles
-  - the death skull shows for ~1s (set in balance.json), then the skull and the unit vanish together
+- Plain JavaScript and HTML canvas, with no build step and no frameworks
+- Code is split into a few ES modules: `main.js`, `terrain.js`, `units.js`, `input.js`, `hud.js`
+- All tunable values (sizes, speeds, radii, counts, timings, colors, the terrain color key) live in a hand-editable `balance.json`, loaded with `fetch()`
+- At runtime, `map.png` is loaded into an offscreen canvas or typed array, and dirt is cleared in place
+- Run locally with a static server (e.g. `python3 -m http.server`)
+- Hosted on GitHub Pages
