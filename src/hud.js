@@ -2,6 +2,7 @@
 // Slice 3: a temporary AP / walk readout (the real HUD is slice 8).
 // Slice 4: mode and angle in the readout, and the PWR bar.
 // Slice 5: per-player AP corners, the turn indicator and the coin flip announcement.
+// Slice 6: the win screen.
 
 export function drawGrid(ctx, balance) {
   const { width, height } = balance.canvas;
@@ -54,7 +55,7 @@ export function drawPlayerReadouts(ctx, balance, players, turn) {
   ctx.save();
   players.forEach((p, i) => {
     const right = i % 2 === 1;
-    const active = turn.phase !== 'announce' && turn.active === i;
+    const active = turn.phase !== 'announce' && turn.phase !== 'over' && turn.active === i;
     const x = right ? width - hud.margin : hud.margin;
     const color = balance.teams[p.team].color;
     ctx.globalAlpha = active ? 1 : hud.inactiveOpacity;
@@ -66,7 +67,7 @@ export function drawPlayerReadouts(ctx, balance, players, turn) {
   });
   ctx.globalAlpha = 1;
 
-  if (turn.phase !== 'announce') {
+  if (turn.phase !== 'announce' && turn.phase !== 'over') {
     const p = players[turn.active];
     const right = turn.active % 2 === 1;
     const k = (action) => keyLabel(p.controls.bindings[action]);
@@ -91,7 +92,7 @@ export function drawPlayerReadouts(ctx, balance, players, turn) {
 
 /** "Player 1 turn" in the top-right corner, in the team color. */
 export function drawTurnIndicator(ctx, balance, players, turn) {
-  if (turn.phase === 'announce') return;
+  if (turn.phase === 'announce' || turn.phase === 'over') return;
   const team = balance.teams[players[turn.active].team];
   const hud = balance.hud;
   ctx.save();
@@ -108,6 +109,27 @@ export function drawAnnouncement(ctx, balance, players, turn) {
   ctx.save();
   label(ctx, hud, 'Coin flip!', width / 2, height / 2 - 14, 'center', hud.color);
   label(ctx, hud, `${team.name} goes first`, width / 2, height / 2 + 4, 'center', team.color, hud.announceFont, hud.announceLineHeight);
+  ctx.restore();
+}
+
+/**
+ * Win screen, centered, once the game is over and the world has settled
+ * (turn.resultShown): "Player N wins" in the winner's color, or "Draw", and the
+ * restart prompt.
+ */
+export function drawWinScreen(ctx, balance, players, turn) {
+  if (turn.phase !== 'over' || !turn.resultShown) return;
+  const { width, height } = balance.canvas;
+  const hud = balance.hud;
+  const ws = balance.winScreen;
+  const { winner, draw } = turn.result;
+  const team = draw ? null : balance.teams[players[winner].team];
+  const text = draw ? ws.drawText : `${team.name} wins`;
+  const color = draw ? hud.color : team.color;
+  ctx.save();
+  label(ctx, hud, text, width / 2, height / 2, 'center', color, ws.font, ws.lineHeight);
+  const prompt = `Press ${keyLabel(ws.restartKey)} to play again`;
+  label(ctx, hud, prompt, width / 2, height / 2 + ws.lineHeight / 2 + ws.promptGap, 'center', hud.color);
   ctx.restore();
 }
 

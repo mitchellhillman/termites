@@ -166,8 +166,8 @@ export function unitsInRadius(units, cx, cy, r) {
 
 /**
  * Every living unit in the blast takes 1 hit, friendly fire included. A unit with
- * hp (hits left) dies at 0. Returns the units hit. Slices 6-7 add queens and
- * drones to the same list.
+ * hp (hits left) dies at 0. A unit is hit at most once per blast (1 hp max). Returns
+ * the units hit. Soldiers and queens are in the list; drones join in slice 7.
  */
 export function damageUnitsInRadius(units, cx, cy, r) {
   const hit = unitsInRadius(units, cx, cy, r);

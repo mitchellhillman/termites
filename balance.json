@@ -12,14 +12,23 @@
   },
 
   "teams": [
-    { "name": "Player 1", "color": "#ffffff", "spawnX": 70, "facing": 1 },
-    { "name": "Player 2", "color": "#e8392b", "spawnX": 570, "facing": -1 }
+    { "name": "Player 1", "color": "#ffffff", "spawnX": 70, "queenX": 70, "facing": 1 },
+    { "name": "Player 2", "color": "#e8392b", "spawnX": 570, "queenX": 570, "facing": -1 }
   ],
 
   "turns": {
     "fixedAP": 2,
     "announceDuration": 2,
-    "settleDelay": 0.5
+    "settleDelay": 0.5,
+    "gameOverDelay": 0.75
+  },
+
+  "winScreen": {
+    "restartKey": "Enter",
+    "drawText": "Draw",
+    "font": "28px monospace",
+    "lineHeight": 36,
+    "promptGap": 14
   },
 
   "hud": {
@@ -51,6 +60,17 @@
     "maxFallSpeed": 400,
     "hitsToKill": 1,
     "eyeColor": "#1a0f08"
+  },
+
+  "queen": {
+    "width": 64,
+    "height": 64,
+    "hitsToKill": 3,
+    "spawnScanY": 360,
+    "gravity": 600,
+    "maxFallSpeed": 400,
+    "eyeColor": "#1a0f08",
+    "dots": { "radius": 3, "spacing": 4, "gap": 4 }
   },
 
   "shot": {

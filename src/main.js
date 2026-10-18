@@ -1,11 +1,15 @@
 // Entry point: load balance.json and the map, then run the draw loop.
 
-import { loadTerrain, render as renderTerrain, getSize, isSolid, explode, getType, getTypeInfo } from './terrain.js';
-import { drawGrid, drawPowerBar, drawPlayerReadouts, drawTurnIndicator, drawAnnouncement } from './hud.js';
+import { loadTerrain, resetTerrain, render as renderTerrain, getSize, isSolid, explode, getType, getTypeInfo } from './terrain.js';
+import { drawGrid, drawPowerBar, drawPlayerReadouts, drawTurnIndicator, drawAnnouncement, drawWinScreen } from './hud.js';
 import { setupClickToExplode, setupKeyboard, playerControls } from './input.js';
-import { createSoldier, findSurfaceSpawn, updateSoldier, drawSoldier, drawDeadSoldier } from './units.js';
+import {
+  createSoldier, findSurfaceSpawn, updateSoldier, drawSoldier, drawDeadUnit,
+  spawnQueen, updateQueen, drawQueen, drawHealthDots,
+} from './units.js';
 import {
   coinFlip, createPlayer, createTurnState, startTurn, canAct, requestEndTurn, updateTurn, worldSettled,
+  checkGameOver, canRestart, resetTurnState, resetPlayer,
 } from './turns.js';
 import {
   moveAim, aimPoint, updateCharge, pressFire, cancelCharge, currentPower, launchSpeed,
@@ -42,13 +46,15 @@ async function start() {
   const debugExplode = setupClickToExplode(canvas, balance);
 
   const world = { ...getSize(), isSolid };
-  const boundKeys = Object.values(balance.controls).flatMap((b) => Object.values(b));
+  const restartKey = balance.winScreen.restartKey;
+  const boundKeys = [...Object.values(balance.controls).flatMap((b) => Object.values(b)), restartKey];
   const keyboard = setupKeyboard(boundKeys);
 
   const cfg = balance.soldier;
   const shotCfg = balance.shot;
   const blastCfg = balance.explosion;
   const turnsCfg = balance.turns;
+  const queenCfg = balance.queen;
   const teamColor = (team) => balance.teams[team].color;
   // A new soldier on the surface above its side's chamber, facing the middle.
   const spawnSoldier = (team) => {
@@ -62,13 +68,19 @@ async function start() {
     p.soldier = spawnSoldier(team);
     return p;
   });
+  // One queen per team (queens[i].team === i), on the floor of its chamber.
+  const placeQueen = (team) => {
+    const t = balance.teams[team];
+    return spawnQueen(world, team, t.queenX, queenCfg, t.facing);
+  };
+  const queens = players.map((p) => placeQueen(p.team));
   const turn = createTurnState(coinFlip(), turnsCfg);
   // One shot in flight at most; input is locked while it flies and its explosion plays.
   const fx = { shot: null, explosion: null };
-  window.termites = { players, turn, fx }; // debug handle for the console and browser tests
 
   const soldiers = () => players.map((p) => p.soldier);
-  const units = soldiers; // every unit a shot can hit, both teams (queens and drones in slices 6-7)
+  // Every unit a shot can hit or that gravity moves, both teams (drones in slice 7).
+  const units = () => [...soldiers(), ...queens];
   const center = (s) => ({ x: s.x + s.w / 2, y: s.y + s.h / 2 });
 
   // Dirt color for explosion particles: whatever the shot hit, else soft dirt.
@@ -78,12 +90,18 @@ async function start() {
     return (balance.terrainKey.find((k) => k.type === 'soft') || balance.terrainKey[0]).color;
   };
 
+  // A blast: clears dirt, then every living unit it touches (queens included,
+  // friendly fire on) takes 1 hit. Win detection runs right after, in frame().
+  function blast(x, y, radius) {
+    const particleColor = dirtColor(x, y); // read before the blast clears it
+    explode(x, y, radius);
+    const hit = damageUnitsInRadius(units(), x, y, radius);
+    fx.explosion = createExplosion(x, y, radius, particleColor, blastCfg);
+    return hit;
+  }
+
   function detonate(shot) {
-    const radius = blastRadius(impactAngle(shot.vx, shot.vy), blastCfg.minRadius, blastCfg.maxRadius);
-    const particleColor = dirtColor(shot.x, shot.y); // read before the blast clears it
-    explode(shot.x, shot.y, radius);
-    damageUnitsInRadius(units(), shot.x, shot.y, radius); // friendly fire included
-    fx.explosion = createExplosion(shot.x, shot.y, radius, particleColor, blastCfg);
+    blast(shot.x, shot.y, blastRadius(impactAngle(shot.vx, shot.vy), blastCfg.minRadius, blastCfg.maxRadius));
   }
 
   // Debug stand-in for slice 7's respawn rules: a dead soldier comes back at its
@@ -94,6 +112,23 @@ async function start() {
     player.soldier.facing = old.facing;
     player.respawnTimer = 0;
   }
+
+  // Restart key on the win screen: same map with every crater undone, fresh queens
+  // and soldiers, cleared players and a new coin flip. Everything is reset in
+  // place so window.termites keeps pointing at live state.
+  function restart() {
+    resetTerrain();
+    fx.shot = null;
+    fx.explosion = null;
+    queens.forEach((q, i) => (queens[i] = placeQueen(q.team)));
+    for (const p of players) {
+      resetPlayer(p, shotCfg);
+      p.soldier = spawnSoldier(p.team);
+    }
+    resetTurnState(turn, coinFlip(), turnsCfg);
+  }
+
+  window.termites = { players, queens, turn, fx, blast, restart }; // debug handle for the console and browser tests
 
   // Start of a turn. Slice 7 replaces the dead-soldier respawn here with the queen
   // rules; turns.js startTurn() is where drones will set the AP.
@@ -134,12 +169,14 @@ async function start() {
     // Input: only the active player's keys count. End Turn is accepted even while
     // a shot flies; the handover still waits for things to settle.
     const active = players[turn.active];
+    if (canRestart(turn) && keyboard.wasPressed(restartKey)) restart();
     if (canAct(turn, turn.active) && active.controls.pressed('endTurn')) requestEndTurn(turn, active);
     const locked = fx.shot || fx.explosion || active.soldier.dead;
     players.forEach((p, i) => {
       const walkDir = canAct(turn, i) && !locked ? handleControls(p, dt) : 0;
       if (!p.soldier.dead) updateSoldier(world, p.soldier, dt, cfg, walkDir, p.walkBudget, p);
     });
+    for (const q of queens) updateQueen(world, q, dt, queenCfg);
     keyboard.endFrame();
 
     if (fx.shot) {
@@ -147,23 +184,33 @@ async function start() {
       if (result === 'impact') detonate(fx.shot);
       if (result !== 'flying') fx.shot = null;
     }
+    // Win check right after any blast resolves (and every frame, so it also catches
+    // debug-handle blasts). The 'over' phase locks input at once; the win screen
+    // itself waits for the explosion to finish and the world to settle.
+    checkGameOver(turn, players, queens);
     if (fx.explosion && !updateExplosion(fx.explosion, dt, blastCfg)) fx.explosion = null;
     for (const p of players) {
-      if (!p.soldier.dead || fx.explosion) continue;
+      if (!p.soldier.dead || fx.explosion || turn.phase === 'over') continue;
       p.respawnTimer += dt;
       if (p.respawnTimer >= balance.debug.respawnDelay) respawn(p);
     }
 
-    if (updateTurn(turn, dt, players, worldSettled(world, fx, soldiers()), turnsCfg)) beginTurn(players[turn.active]);
+    if (updateTurn(turn, dt, players, worldSettled(world, fx, units()), turnsCfg)) beginTurn(players[turn.active]);
 
     ctx.fillStyle = balance.canvas.background;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     renderTerrain(ctx);
     drawGrid(ctx, balance);
+    for (const q of queens) {
+      const color = teamColor(q.team);
+      if (q.dead) drawDeadUnit(ctx, q, color);
+      else drawQueen(ctx, q, color, queenCfg.eyeColor);
+      drawHealthDots(ctx, q, color, queenCfg.dots);
+    }
     players.forEach((p, i) => {
       const s = p.soldier;
       const color = teamColor(p.team);
-      if (s.dead) return drawDeadSoldier(ctx, s, color);
+      if (s.dead) return drawDeadUnit(ctx, s, color);
       drawSoldier(ctx, s, color, cfg.eyeColor);
       if (canAct(turn, i) && p.aim.mode === 'shoot' && !fx.shot) {
         const c = center(s);
@@ -178,6 +225,7 @@ async function start() {
     drawTurnIndicator(ctx, balance, players, turn);
     drawPlayerReadouts(ctx, balance, players, turn);
     drawAnnouncement(ctx, balance, players, turn);
+    drawWinScreen(ctx, balance, players, turn);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);

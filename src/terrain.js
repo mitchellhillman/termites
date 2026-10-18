@@ -7,6 +7,7 @@
 let width = 0;
 let height = 0;
 let types = null; // Uint8Array, one terrain-type ID per pixel (ID = index in balance.terrainKey)
+let pristine = null; // copy of `types` as loaded from map.png, for resetTerrain()
 let key = []; // [{ type, color, solid, resistance, rgb: [r, g, b] }]
 let image = null; // ImageData built from the type array
 let canvas = null; // offscreen canvas holding `image`
@@ -72,6 +73,8 @@ export async function loadTerrain(url, balance) {
     console.warn('map.png has colors not in the terrain key (treated as open):', Object.fromEntries(unknown));
   }
 
+  pristine = types.slice();
+
   canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
@@ -81,6 +84,18 @@ export async function loadTerrain(url, balance) {
   // all of it once the context comes back.
   canvas.addEventListener('contextrestored', markAllDirty);
   image = canvasCtx.createImageData(width, height);
+  for (let i = 0; i < types.length; i++) writePixel(i);
+  markAllDirty();
+}
+
+/**
+ * Undo every crater and tunnel: put the map back exactly as map.png loaded it
+ * (from a copy kept at load, so no refetch or re-decode) and redraw all of it.
+ * Used by the restart key on the win screen.
+ */
+export function resetTerrain() {
+  if (!pristine) return;
+  types.set(pristine);
   for (let i = 0; i < types.length; i++) writePixel(i);
   markAllDirty();
 }

@@ -1,6 +1,6 @@
 // Units (soldiers, queens, drones). Slice 3: one soldier that falls, walks and
 // climbs, plus the walk budget. Slice 4: hit points and a placeholder death.
-// Queens and drones come in slices 6 and 7.
+// Slice 6: queens (3 hp, health dots, fall like soldiers). Drones come in slice 7.
 //
 // Movement is pure grid math against a `world` ({ width, height, isSolid(x, y) })
 // with no DOM, so it can be tested in node against a synthetic grid. Positions are
@@ -16,7 +16,7 @@ export function rectFree(world, x, y, w, h) {
 }
 
 /** True if a w x h rect at (x, y) has solid ground (or the map bottom) right under its feet. */
-function floorAt(world, x, y, w, h) {
+export function floorAt(world, x, y, w, h) {
   const row = y + h;
   if (row >= world.height) return true;
   for (let xx = x; xx < x + w; xx++) if (world.isSolid(xx, row)) return true;
@@ -33,21 +33,23 @@ function clingWall(world, s) {
 }
 
 /**
- * A soldier stays put if there is dirt under its feet, or if it is mid-climb and
- * the wall it is climbing still touches it. Otherwise it falls.
+ * A unit stays put if there is dirt under its feet, or (soldiers only) if it is
+ * mid-climb and the wall it is climbing still touches it. Otherwise it falls.
+ * Works for any { x, y, w, h, clingDir? } rect, so queens use it too.
  */
 export function isSupported(world, s) {
   return floorAt(world, s.x, s.y, s.w, s.h) || clingWall(world, s);
 }
 
 /**
- * Spawn position for a w x h unit centered on centerX: scan down from the top of
- * the map to the first solid pixel under its footprint and stand on it. Scanning
- * from the top lands on the surface, never inside a chamber below it.
+ * Spawn position for a w x h unit centered on centerX: scan down from row fromY
+ * to the first solid pixel under its footprint and stand on it. Scanning from the
+ * top (the default) lands on the surface, never inside a chamber below it; a
+ * queen scans from a row inside its chamber to find the chamber floor.
  */
-export function findSurfaceSpawn(world, centerX, w, h) {
+export function findSurfaceSpawn(world, centerX, w, h, fromY = 0) {
   const x = Math.min(world.width - w, Math.max(0, Math.round(centerX - w / 2)));
-  for (let y = 0; y < world.height; y++) {
+  for (let y = Math.max(0, Math.round(fromY)); y < world.height; y++) {
     for (let xx = x; xx < x + w; xx++) {
       if (world.isSolid(xx, y)) return { x, y: Math.max(0, y - h) };
     }
@@ -156,6 +158,27 @@ export class WalkBudget {
 }
 
 /**
+ * Gravity for any unit ({ x, y, w, h, vy, fallAccum }): accelerate by cfg.gravity
+ * up to cfg.maxFallSpeed and drop whole pixels until something is under its feet.
+ * Each step only checks the row under the feet, so a unit whose body grazes dirt
+ * (a queen's corners against its chamber's rounded roof) still falls freely.
+ * No fall damage. Call it only while the unit is unsupported.
+ */
+export function fall(world, u, dt, cfg) {
+  u.vy = Math.min(cfg.maxFallSpeed, u.vy + cfg.gravity * dt);
+  u.fallAccum += u.vy * dt;
+  while (u.fallAccum >= 1) {
+    if (floorAt(world, u.x, u.y, u.w, u.h)) break;
+    u.y++;
+    u.fallAccum -= 1;
+  }
+  if (floorAt(world, u.x, u.y, u.w, u.h)) {
+    u.vy = 0; // landed
+    u.fallAccum = 0;
+  }
+}
+
+/**
  * Advance one soldier by dt seconds. walkDir is -1, 0 or 1 from the keys.
  * Unsupported soldiers fall (no walking mid-air); supported ones walk at walkSpeed
  * px/s along the path, paid for by `budget` from `pool`. Holding the walk key does
@@ -167,20 +190,7 @@ export function updateSoldier(world, s, dt, cfg, walkDir, budget, pool) {
   if (!isSupported(world, s)) {
     s.clingDir = 0;
     s.walkAccum = 0;
-    s.vy = Math.min(cfg.maxFallSpeed, s.vy + cfg.gravity * dt);
-    s.fallAccum += s.vy * dt;
-    while (s.fallAccum >= 1) {
-      if (!rectFree(world, s.x, s.y + 1, s.w, s.h)) {
-        s.fallAccum = 0;
-        break;
-      }
-      s.y++;
-      s.fallAccum -= 1;
-    }
-    if (floorAt(world, s.x, s.y, s.w, s.h)) {
-      s.vy = 0; // landed
-      s.fallAccum = 0;
-    }
+    fall(world, s, dt, cfg);
     return;
   }
   s.vy = 0;
@@ -227,9 +237,9 @@ export function drawSoldier(ctx, s, color, eyeColor) {
 
 /**
  * Placeholder death (the real skull is slice 8): a dimmed team-colored X over
- * where the soldier stood.
+ * where the unit stood, as wide as the unit (soldier or queen).
  */
-export function drawDeadSoldier(ctx, s, color) {
+export function drawDeadUnit(ctx, s, color) {
   ctx.save();
   ctx.globalAlpha = 0.6;
   ctx.fillStyle = color;
@@ -241,4 +251,103 @@ export function drawDeadSoldier(ctx, s, color) {
     ctx.fillRect(x0 + size - 1 - i, y0 + i, 2, 2);
   }
   ctx.restore();
+}
+
+export const drawDeadSoldier = drawDeadUnit;
+
+// --- Queen -------------------------------------------------------------------------
+
+/**
+ * A queen: never moves on its own, falls (no fall damage) when the dirt under it
+ * goes, and takes cfg.hitsToKill blast hits (shots.js damageUnitsInRadius).
+ */
+export function createQueen(team, x, y, cfg, facing = 1) {
+  return {
+    team,
+    kind: 'queen',
+    x,
+    y,
+    w: cfg.width,
+    h: cfg.height,
+    facing,
+    vy: 0,
+    fallAccum: 0,
+    maxHp: cfg.hitsToKill,
+    hp: cfg.hitsToKill,
+    dead: false,
+  };
+}
+
+/** Queen on the floor of its chamber: scan down from cfg.spawnScanY at centerX. */
+export function spawnQueen(world, team, centerX, cfg, facing = 1) {
+  const spot = findSurfaceSpawn(world, centerX, cfg.width, cfg.height, cfg.spawnScanY);
+  return createQueen(team, spot.x, spot.y, cfg, facing);
+}
+
+/** Queens only obey gravity. */
+export function updateQueen(world, q, dt, cfg) {
+  if (q.dead) return;
+  if (isSupported(world, q)) {
+    q.vy = 0;
+    q.fallAccum = 0;
+    return;
+  }
+  fall(world, q, dt, cfg);
+}
+
+/** Health dots, left to right: true = health remaining (filled), false = hit taken (hollow). */
+export function healthDots(q) {
+  return Array.from({ length: q.maxHp }, (_, i) => i < Math.max(0, q.hp));
+}
+
+// A pixel-art dot: every pixel within radius r of the dot's center (filled), or
+// just the outer 1px ring (hollow). Whole-pixel fillRects keep it crisp.
+function drawDot(ctx, cx, cy, r, filled) {
+  for (let dy = -r; dy < r; dy++) {
+    for (let dx = -r; dx < r; dx++) {
+      const d = Math.hypot(dx + 0.5, dy + 0.5);
+      if (d > r || (!filled && d <= r - 1)) continue;
+      ctx.fillRect(cx + dx, cy + dy, 1, 1);
+    }
+  }
+}
+
+/** Health dots centered over the queen's head, in the team color. cfg: balance.queen.dots. */
+export function drawHealthDots(ctx, q, color, cfg) {
+  const dots = healthDots(q);
+  const step = cfg.radius * 2 + cfg.spacing;
+  const total = dots.length * step - cfg.spacing;
+  const x0 = Math.round(q.x + q.w / 2 - total / 2) + cfg.radius;
+  const cy = Math.round(q.y - cfg.gap - cfg.radius);
+  ctx.fillStyle = color;
+  dots.forEach((full, i) => drawDot(ctx, x0 + i * step, cy, cfg.radius, full));
+}
+
+/**
+ * Placeholder queen art (the real sprite is slice 8): a big blocky body in the
+ * team color, with stepped corners, a head on the side it faces, an eye and legs.
+ */
+export function drawQueen(ctx, q, color, eyeColor) {
+  const { x, y, w, h, facing } = q;
+  ctx.fillStyle = color;
+  const legH = Math.round(h * 0.12);
+  const bodyTop = y + Math.round(h * 0.3);
+  const bodyBottom = y + h - legH;
+  const step = 4;
+  // Abdomen: a wide block with stepped corners.
+  ctx.fillRect(x + step, bodyTop, w - 2 * step, bodyBottom - bodyTop);
+  ctx.fillRect(x, bodyTop + step, w, bodyBottom - bodyTop - 2 * step);
+  // Head and crown on the facing side.
+  const headW = Math.round(w * 0.38);
+  const headX = facing > 0 ? x + w - headW : x;
+  ctx.fillRect(headX, y + Math.round(h * 0.1), headW, Math.round(h * 0.3));
+  for (let i = 0; i < 3; i++) ctx.fillRect(headX + 2 + i * Math.round((headW - 6) / 2), y, 2, Math.round(h * 0.1));
+  // Legs.
+  for (let i = 0; i < 4; i++) ctx.fillRect(x + 6 + i * Math.round((w - 16) / 3), bodyBottom, 4, legH);
+  // Eye, and a few stripes across the abdomen in the background color.
+  ctx.fillStyle = eyeColor;
+  const eyeX = facing > 0 ? x + w - 8 : x + 4;
+  ctx.fillRect(eyeX, y + Math.round(h * 0.18), 4, 4);
+  const stripeX0 = facing > 0 ? x + 8 : x + headW + 4;
+  for (let i = 0; i < 3; i++) ctx.fillRect(stripeX0 + i * 8, bodyTop + 6, 2, bodyBottom - bodyTop - 12);
 }

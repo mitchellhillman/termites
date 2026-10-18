@@ -175,7 +175,7 @@ Each slice ends with something you can run and see in the browser.
 - [x] **3. One soldier walking:** soldier sprite, gravity and falling, walking on surfaces and climbing walls, and the 40px walk budget. P1 keys only.
 - [x] **4. Shooting:** aim cursor, facing flip, PWR bar, shot arc, explosion on contact, blast radius from impact angle, and the pixel-ring effect.
 - [x] **5. Two players and turns:** second soldier, P2 keys, mode toggle, AP spending, End Turn, coin flip, and turn indicator. Uses a fixed AP number until drones exist.
-- [ ] **6. Queens and win rules:** queens in their chambers, 3 health and health dots, blast damage to all units, friendly fire, and win, draw, and restart.
+- [x] **6. Queens and win rules:** queens in their chambers, 3 health and health dots, blast damage to all units, friendly fire, and win, draw, and restart.
 - [ ] **7. Drones:** spawning, the drone cap, wandering, tunneling with resistance, wall-clinging, and real-time movement. AP comes from drone count; soldier death skips a spawn and respawns the soldier.
 - [ ] **8. Polish:** PNG sprite sheets with tinting, walk animations, death skulls, explosion particles, the full HUD, and the title screen.
 - [ ] **9. Ship:** GitHub Pages setup and a README with how to run and play.
