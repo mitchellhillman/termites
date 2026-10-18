@@ -1,0 +1,39 @@
+{
+  "mapFile": "map.png",
+
+  "canvas": {
+    "width": 640,
+    "height": 480,
+    "background": "#1a0f08"
+  },
+
+  "grid": {
+    "spacing": 40,
+    "color": "#ffffff",
+    "opacity": 0.08
+  },
+
+  "terrainKey": [
+    { "type": "open",    "color": "#2b1a0e", "solid": false, "resistance": 0 },
+    { "type": "soft",    "color": "#9a6a3c", "solid": true,  "resistance": 1 },
+    { "type": "medium",  "color": "#845a32", "solid": true,  "resistance": 0.75 },
+    { "type": "hard",    "color": "#6e4a29", "solid": true,  "resistance": 0.5 },
+    { "type": "bedrock", "color": "#4a4440", "solid": true,  "resistance": 0 }
+  ],
+
+  "mapGenerator": {
+    "seed": 1337,
+    "surfaceY": 150,
+    "hillAmplitude": 55,
+    "hillWaves": 3,
+    "flatEdgeWidth": 130,
+    "softMediumY": 250,
+    "mediumHardY": 345,
+    "bandWaveAmplitude": 12,
+    "bedrockHeight": 8,
+    "chamberWidth": 84,
+    "chamberHeight": 76,
+    "chamberEdgeMargin": 28,
+    "chamberFloorY": 400
+  }
+}
