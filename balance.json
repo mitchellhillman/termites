@@ -12,8 +12,22 @@
   },
 
   "teams": [
-    { "name": "Player 1", "short": "P1", "color": "#ffffff", "spawnX": 70, "queenX": 70, "facing": 1 },
-    { "name": "Player 2", "short": "P2", "color": "#e8392b", "spawnX": 570, "queenX": 570, "facing": -1 }
+    {
+      "name": "Player 1",
+      "short": "P1",
+      "color": "#f2f2f9",
+      "spawnX": 70,
+      "queenX": 70,
+      "facing": 1
+    },
+    {
+      "name": "Player 2",
+      "short": "P2",
+      "color": "#d82323",
+      "spawnX": 570,
+      "queenX": 570,
+      "facing": -1
+    }
   ],
 
   "turns": {
@@ -34,7 +48,7 @@
   "hud": {
     "font": "10px monospace",
     "announceFont": "16px monospace",
-    "color": "#ffffff",
+    "color": "#f2f2f9",
     "margin": 4,
     "lineHeight": 12,
     "announceLineHeight": 22,
@@ -45,7 +59,12 @@
     "rowGap": 2,
     "itemGap": 6,
     "token": { "radius": 3, "spacing": 2 },
-    "walkBar": { "width": 40, "height": 5, "backColor": "#000000", "backOpacity": 0.6 },
+    "walkBar": {
+      "width": 40,
+      "height": 5,
+      "backColor": "#161423",
+      "backOpacity": 0.6
+    },
     "turnOverText": "turn over..."
   },
 
@@ -65,15 +84,31 @@
   },
 
   "controls": {
-    "p1": { "left": "KeyA", "right": "KeyD", "faceUp": "KeyW", "faceDown": "KeyS", "mode": "KeyQ", "fire": "KeyE", "endTurn": "KeyR" },
-    "p2": { "left": "ArrowLeft", "right": "ArrowRight", "faceUp": "ArrowUp", "faceDown": "ArrowDown", "mode": "Slash", "fire": "Period", "endTurn": "Comma" }
+    "p1": {
+      "left": "KeyA",
+      "right": "KeyD",
+      "faceUp": "KeyW",
+      "faceDown": "KeyS",
+      "mode": "KeyQ",
+      "fire": "KeyE",
+      "endTurn": "KeyR"
+    },
+    "p2": {
+      "left": "ArrowLeft",
+      "right": "ArrowRight",
+      "faceUp": "ArrowUp",
+      "faceDown": "ArrowDown",
+      "mode": "Slash",
+      "fire": "Period",
+      "endTurn": "Comma"
+    }
   },
 
   "soldier": {
     "width": 12,
     "height": 24,
     "walkSpeed": 40,
-    "walkPxPerAP": 40,
+    "walkPxPerAP": 80,
     "walkAPCost": 1,
     "stepUpPx": 3,
     "snapDownPx": 4,
@@ -128,11 +163,36 @@
   },
 
   "sprites": {
-    "drone":   { "file": "sprites/drone.png",   "frameWidth": 12, "frameHeight": 4,  "frames": ["walk1", "walk2"] },
-    "soldier": { "file": "sprites/soldier.png", "frameWidth": 12, "frameHeight": 24, "frames": ["idle", "walk1", "walk2", "aimMid", "aimHigh"] },
-    "queen":   { "file": "sprites/queen.png",   "frameWidth": 64, "frameHeight": 64, "frames": ["idle"] },
-    "skull":   { "file": "sprites/skull.png",   "frameWidth": 7,  "frameHeight": 7,  "frames": ["skull"] },
-    "cursor":  { "file": "sprites/cursor.png",  "frameWidth": 5,  "frameHeight": 5,  "frames": ["cursor"] }
+    "drone": {
+      "file": "sprites/drone.png",
+      "frameWidth": 12,
+      "frameHeight": 4,
+      "frames": ["walk1", "walk2"]
+    },
+    "soldier": {
+      "file": "sprites/soldier.png",
+      "frameWidth": 12,
+      "frameHeight": 24,
+      "frames": ["idle", "walk1", "walk2", "aimMid", "aimHigh"]
+    },
+    "queen": {
+      "file": "sprites/queen.png",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "frames": ["idle"]
+    },
+    "skull": {
+      "file": "sprites/skull.png",
+      "frameWidth": 7,
+      "frameHeight": 7,
+      "frames": ["skull"]
+    },
+    "cursor": {
+      "file": "sprites/cursor.png",
+      "frameWidth": 5,
+      "frameHeight": 5,
+      "frames": ["cursor"]
+    }
   },
 
   "shot": {
@@ -151,18 +211,18 @@
       "width": 4,
       "height": 32,
       "gap": 4,
-      "markerColor": "#ffffff",
-      "bottomColor": "#3fbf3f",
-      "middleColor": "#f2d22e",
-      "topColor": "#e8392b",
-      "labelColor": "#ffffff",
+      "markerColor": "#f2f2f9",
+      "bottomColor": "#1fcb23",
+      "middleColor": "#f7e26c",
+      "topColor": "#d82323",
+      "labelColor": "#f2f2f9",
       "font": "8px monospace"
     }
   },
 
   "grid": {
     "spacing": 40,
-    "color": "#ffffff",
+    "color": "#f2f2f9",
     "opacity": 0.08
   },
 
@@ -171,7 +231,7 @@
     "maxRadius": 100,
     "ringDuration": 0.45,
     "ringBlock": 3,
-    "ringColor": "#ffe9a8",
+    "ringColor": "#f7e26c",
     "particleCount": 14,
     "particleSpeed": 110,
     "particleGravity": 400,
@@ -184,17 +244,17 @@
     "clickToExplode": false,
     "clickExplosionRadius": 40,
     "radiusStep": 5,
-    "color": "#ffffff",
+    "color": "#f2f2f9",
     "circleOpacity": 0.35,
     "font": "10px monospace"
   },
 
   "terrainKey": [
-    { "type": "open",    "color": "#2b1a0e", "solid": false, "resistance": 0 },
-    { "type": "soft",    "color": "#9a6a3c", "solid": true,  "resistance": 1 },
-    { "type": "medium",  "color": "#845a32", "solid": true,  "resistance": 0.75 },
-    { "type": "hard",    "color": "#6e4a29", "solid": true,  "resistance": 0.5 },
-    { "type": "bedrock", "color": "#4a4440", "solid": true,  "resistance": 0 }
+    { "type": "open", "color": "#6c251e", "solid": false, "resistance": 0 },
+    { "type": "soft", "color": "#edb329", "solid": true, "resistance": 1 },
+    { "type": "medium", "color": "#e76d14", "solid": true, "resistance": 0.75 },
+    { "type": "hard", "color": "#934226", "solid": true, "resistance": 0.5 },
+    { "type": "bedrock", "color": "#6a5fa0", "solid": true, "resistance": 0 }
   ],
 
   "mapGenerator": {
