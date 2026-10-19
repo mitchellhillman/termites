@@ -4,7 +4,7 @@
   "canvas": {
     "width": 640,
     "height": 480,
-    "background": "#1a0f08"
+    "background": "#000"
   },
 
   "timing": {
@@ -15,7 +15,7 @@
     {
       "name": "Player 1",
       "short": "P1",
-      "color": "#f2f2f9",
+      "color": "#fff",
       "spawnX": 70,
       "queenX": 70,
       "facing": 1
@@ -23,7 +23,7 @@
     {
       "name": "Player 2",
       "short": "P2",
-      "color": "#d82323",
+      "color": "red",
       "spawnX": 570,
       "queenX": 570,
       "facing": -1
@@ -48,11 +48,11 @@
   "hud": {
     "font": "10px monospace",
     "announceFont": "16px monospace",
-    "color": "#f2f2f9",
+    "color": "#fff",
     "margin": 4,
     "lineHeight": 12,
     "announceLineHeight": 22,
-    "panelColor": "#1a0f08",
+    "panelColor": "#000",
     "panelOpacity": 0.75,
     "inactiveOpacity": 0.65,
     "occludedOpacity": 0.3,
@@ -62,7 +62,7 @@
     "walkBar": {
       "width": 40,
       "height": 5,
-      "backColor": "#161423",
+      "backColor": "#000",
       "backOpacity": 0.6
     },
     "turnOverText": "turn over..."
@@ -70,11 +70,11 @@
 
   "title": {
     "text": "Termites",
-    "font": "bold 48px monospace",
-    "subtitle": "Two players, one keyboard. Destroy the enemy queen!",
+    "font": "bold 12px monospace",
+    "subtitle": "Kill the enemy queen!",
     "headingFont": "12px monospace",
     "promptText": "press any key",
-    "promptFont": "14px monospace",
+    "promptFont": "12px monospace",
     "blinkPeriod": 1.0,
     "panelWidth": 440,
     "panelHeight": 300,
@@ -128,14 +128,14 @@
     "spawnScanY": 360,
     "gravity": 600,
     "maxFallSpeed": 400,
-    "dots": { "radius": 3, "spacing": 4, "gap": 4 }
+    "dots": { "radius": 2, "spacing": 4, "gap": 4 }
   },
 
   "drone": {
     "width": 12,
     "height": 4,
     "speed": 5,
-    "digRadius": 8,
+    "digRadius": 4,
     "bodyRadius": 2,
     "touchMargin": 1.5,
     "edgeMargin": 6,
@@ -158,7 +158,7 @@
   "death": {
     "skullTime": 1.0,
     "corpseOpacity": 0.55,
-    "skullOutlineColor": "#1a0f08",
+    "skullOutlineColor": "#000",
     "skullScale": { "drone": 1, "soldier": 1, "queen": 3 }
   },
 
@@ -200,7 +200,7 @@
     "startAngle": 45,
     "aimSpeed": 60,
     "aimArcRadius": 22,
-    "powerSweepSpeed": 1.25,
+    "powerSweepSpeed": 3,
     "minSpeed": 80,
     "maxSpeed": 460,
     "gravity": 300,
@@ -211,27 +211,27 @@
       "width": 4,
       "height": 32,
       "gap": 4,
-      "markerColor": "#f2f2f9",
+      "markerColor": "#fff",
       "bottomColor": "#1fcb23",
       "middleColor": "#f7e26c",
       "topColor": "#d82323",
-      "labelColor": "#f2f2f9",
+      "labelColor": "#fff",
       "font": "8px monospace"
     }
   },
 
   "grid": {
     "spacing": 40,
-    "color": "#f2f2f9",
-    "opacity": 0.05
+    "color": "#fff",
+    "opacity": 0
   },
 
   "explosion": {
-    "minRadius": 5,
+    "minRadius": 1,
     "maxRadius": 100,
     "ringDuration": 0.45,
     "ringBlock": 3,
-    "ringColor": "#f2c0a2",
+    "ringColor": "#fff",
     "particleCount": 14,
     "particleSpeed": 110,
     "particleGravity": 400,
@@ -244,29 +244,29 @@
     "clickToExplode": false,
     "clickExplosionRadius": 40,
     "radiusStep": 5,
-    "color": "#f2f2f9",
+    "color": "#fff",
     "circleOpacity": 0.35,
     "font": "10px monospace"
   },
 
   "terrainKey": [
-    { "type": "open", "color": "#161423", "solid": false, "resistance": 0 },
-    { "type": "soft", "color": "#f7e26c", "solid": true, "resistance": 1 },
-    { "type": "medium", "color": "#edb329", "solid": true, "resistance": 0.75 },
-    { "type": "hard", "color": "#e76d14", "solid": true, "resistance": 0.5 },
-    { "type": "bedrock", "color": "#6a5fa0", "solid": true, "resistance": 0 }
+    { "type": "open", "color": "#000", "solid": false, "resistance": 0 },
+    { "type": "soft", "color": "#edb329", "solid": true, "resistance": 1 },
+    { "type": "medium", "color": "#e76d14", "solid": true, "resistance": 0.75 },
+    { "type": "hard", "color": "#934226", "solid": true, "resistance": 0.5 },
+    { "type": "bedrock", "color": "#6c251e", "solid": true, "resistance": 0 }
   ],
 
   "mapGenerator": {
-    "seed": 1337,
-    "surfaceY": 150,
-    "hillAmplitude": 55,
-    "hillWaves": 3,
+    "seed": 2115,
+    "surfaceY": 100,
+    "hillAmplitude": 30,
+    "hillWaves": 8,
     "flatEdgeWidth": 130,
     "softMediumY": 250,
     "mediumHardY": 345,
     "bandWaveAmplitude": 12,
-    "bedrockHeight": 8,
+    "bedrockHeight": 12,
     "chamberWidth": 84,
     "chamberHeight": 76,
     "chamberEdgeMargin": 28,
