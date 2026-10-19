@@ -223,7 +223,7 @@
   "grid": {
     "spacing": 40,
     "color": "#f2f2f9",
-    "opacity": 0.08
+    "opacity": 0.05
   },
 
   "explosion": {
@@ -231,7 +231,7 @@
     "maxRadius": 100,
     "ringDuration": 0.45,
     "ringBlock": 3,
-    "ringColor": "#f7e26c",
+    "ringColor": "#f2c0a2",
     "particleCount": 14,
     "particleSpeed": 110,
     "particleGravity": 400,
@@ -250,10 +250,10 @@
   },
 
   "terrainKey": [
-    { "type": "open", "color": "#6c251e", "solid": false, "resistance": 0 },
-    { "type": "soft", "color": "#edb329", "solid": true, "resistance": 1 },
-    { "type": "medium", "color": "#e76d14", "solid": true, "resistance": 0.75 },
-    { "type": "hard", "color": "#934226", "solid": true, "resistance": 0.5 },
+    { "type": "open", "color": "#161423", "solid": false, "resistance": 0 },
+    { "type": "soft", "color": "#f7e26c", "solid": true, "resistance": 1 },
+    { "type": "medium", "color": "#edb329", "solid": true, "resistance": 0.75 },
+    { "type": "hard", "color": "#e76d14", "solid": true, "resistance": 0.5 },
     { "type": "bedrock", "color": "#6a5fa0", "solid": true, "resistance": 0 }
   ],
 
